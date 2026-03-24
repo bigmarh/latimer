@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en" style="color-scheme: dark;">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.nostrpass.com 'wasm-unsafe-eval' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' wss: https:; img-src 'self' data: blob: https:; font-src 'self' data:; frame-src https://cdn.nostrpass.com; frame-ancestors 'none';" />
+    <script src="https://cdn.nostrpass.com/lite-embassy@0.1.2.js"></script>
+
+    <!-- PWA & theme -->
+    <meta name="theme-color" content="#0a0a0f" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Latimer" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/svg+xml" href="/latimer-logo-face.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <!-- Description & SEO -->
+    <meta name="description" content="End-to-end encrypted video and audio calls over Nostr" />
+    <meta name="application-name" content="Latimer" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Latimer — Nostr Calls" />
+    <meta property="og:description" content="End-to-end encrypted video and audio calls over Nostr" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Latimer — Nostr Calls" />
+    <meta name="twitter:description" content="End-to-end encrypted video and audio calls over Nostr" />
+
+    <title>Latimer — Nostr Calls</title>
+
+    <!-- Inline splash screen — renders before JS loads -->
+    <style>
+      #splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        background: #0a0a0f;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 24px;
+        transition: opacity 0.4s ease;
+      }
+      #splash.fade-out {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .splash-icon {
+        width: 96px;
+        height: 96px;
+        border-radius: 20px;
+        overflow: hidden;
+      }
+      .splash-title {
+        font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+        font-size: 24px;
+        font-weight: 700;
+        color: #e8e8f0;
+        letter-spacing: 0.01em;
+      }
+      .splash-spinner {
+        width: 28px;
+        height: 28px;
+        border: 3px solid rgba(124, 58, 237, 0.2);
+        border-top-color: #7c3aed;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+
+      /* Desktop: constrain to phone width and center */
+      @media (min-width: 480px) {
+        html, body {
+          background: #050508;
+        }
+        body {
+          display: flex;
+          justify-content: center;
+        }
+        #app {
+          width: 430px;
+          max-width: 430px;
+          min-height: 100dvh;
+          position: relative;
+          box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.08), 0 8px 64px rgba(0, 0, 0, 0.7);
+          overflow: hidden;
+        }
+        #splash {
+          width: 430px;
+          left: 50%;
+          transform: translateX(-50%);
+        }
+      }
+    </style>
+    <script type="module" crossorigin src="/assets/index-b3pMnO92.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-Bv-b4NWS.css">
+  <script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script></head>
+  <body>
+    <!-- Splash screen — visible before Solid hydrates -->
+    <div id="splash">
+      <div class="splash-icon">
+        <img src="/latimer-logo-face.svg" alt="Latimer" width="96" height="96" />
+      </div>
+      <div class="splash-title">Latimer</div>
+      <div class="splash-spinner"></div>
+    </div>
+
+    <div id="app"></div>
+  </body>
+</html>
