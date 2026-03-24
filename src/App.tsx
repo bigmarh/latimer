@@ -484,7 +484,7 @@ const App: Component = () => {
   const handleIncognito = () => {
     const session = createEphemeralSession();
     const relays = store.relays.length > 0 ? store.relays : DEFAULT_RELAYS;
-    void initLogin(session.pubkey, relays, { signer: session.signer, skHex: session.skHex, skipContactLoad: true });
+    void initLogin(session.pubkey, relays, { signer: session.signer, skHex: session.skHex, skipContactLoad: true, view: 'incognitoLobby' });
   };
 
   // Called from JoinCall page — joiner uses an ephemeral key and auto-calls the host
