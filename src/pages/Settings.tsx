@@ -99,30 +99,24 @@ const Settings: Component = () => {
   };
 
   const handleLogout = async () => {
-    // Log out of NostrPass (clears its session so auto-login doesn't fire)
+    // Tell NostrPass to log out (clears its iframe session)
     await logoutNostrPass();
 
-    // Clear storage
+    // Clear our storage keys
     localStorage.removeItem(STORAGE_KEYS.pubkey);
     localStorage.removeItem(STORAGE_KEYS.relays);
     localStorage.removeItem(STORAGE_KEYS.loginMethod);
 
+    // Clear any NostrPass localStorage keys
+    Object.keys(localStorage)
+      .filter(k => k.startsWith('latimer-nostrpass'))
+      .forEach(k => localStorage.removeItem(k));
+
     // Destroy signaling
     signalingService.destroy();
 
-    // Reset store
-    setStore({
-      loggedIn: false,
-      pubkey: '',
-      contacts: [],
-      contactsLoaded: false,
-      callState: 'idle',
-      activeCallId: null,
-      activeCallContact: null,
-      incomingCall: null,
-      view: 'home',
-      recentCalls: [],
-    });
+    // Reload the page — this is the only reliable way to fully reset NostrPass state
+    window.location.reload();
   };
 
   return (
