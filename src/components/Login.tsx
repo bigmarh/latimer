@@ -161,7 +161,7 @@ const Login: Component<LoginProps> = (props) => {
   onMount(async () => {
     // Wait for window.load so late-injecting extensions (Alby, etc.) have finished
     // injecting window.nostr. NostrPass isn't installed yet at this point.
-    await new Promise<void>(resolve => window.addEventListener('load', resolve, { once: true }));
+    await new Promise<void>(resolve => window.addEventListener('load', () => resolve(), { once: true }));
     const earlyNostr = (window as Window & { __earlyNostr?: typeof window.nostr }).__earlyNostr
       ?? window.nostr
       ?? null;
