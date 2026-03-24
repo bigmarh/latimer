@@ -12,7 +12,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "deploy": "pnpm build && git add dist/ && git commit -m 'deploy: rebuild' && git push"
+    "ship": "pnpm build && git add dist/ && git commit -m 'deploy: rebuild' && git push"
   },
   "dependencies": {
     "@noble/curves": "^1.4.0",
