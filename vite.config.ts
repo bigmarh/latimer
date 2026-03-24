@@ -5,8 +5,19 @@ import tailwindcss from "@tailwindcss/vite";
 import basicSsl from "@vitejs/plugin-basic-ssl";
 import { VitePWA } from "vite-plugin-pwa";
 
+const resolveUuid = () => ({
+  name: 'resolve-uuid',
+  resolveId(id: string) {
+    if (id === 'uuid') {
+      return resolve('node_modules/uuid/dist/esm-browser/index.js');
+    }
+    return null;
+  },
+});
+
 export default defineConfig({
   plugins: [
+    resolveUuid(),
     tailwindcss(),
     solid(),
     basicSsl(),
@@ -39,9 +50,7 @@ export default defineConfig({
   },
   resolve: {
     conditions: ["browser", "import", "module", "default"],
-    alias: {
-      uuid: resolve("node_modules/uuid"),
-    },
+    alias: {},
   },
   optimizeDeps: {
     include: ["solid-js", "solid-js/web"],
