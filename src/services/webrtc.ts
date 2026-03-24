@@ -11,6 +11,7 @@ class WebRTCService {
   private localStream: MediaStream | null = null;
   private remoteStream: MediaStream = new MediaStream();
   private pendingCandidates: RTCIceCandidateInit[] = [];
+  private facingMode: 'user' | 'environment' = 'user';
 
   onLocalStream: StreamCallback | null = null;
   onRemoteTrack: TrackCallback | null = null;
@@ -130,12 +131,17 @@ class WebRTCService {
     }
   }
 
-  async switchCamera(deviceId: string): Promise<void> {
+  async flipCamera(): Promise<void> {
     if (!this.pc || !this.localStream) return;
-
+    this.facingMode = this.facingMode === 'user' ? 'environment' : 'user';
     const newStream = await navigator.mediaDevices.getUserMedia({
-      video: { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } },
-    });
+      video: { facingMode: { exact: this.facingMode }, width: { ideal: 1280 }, height: { ideal: 720 } },
+    }).catch(() =>
+      // Some devices don't support 'exact' — fall back to ideal
+      navigator.mediaDevices.getUserMedia({
+        video: { facingMode: this.facingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
+      })
+    );
 
     const newTrack = newStream.getVideoTracks()[0];
     if (!newTrack) return;

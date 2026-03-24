@@ -1,7 +1,6 @@
 import type { Component } from 'solid-js';
 import { Show, createSignal } from 'solid-js';
 import { store } from '../store';
-import { cameras, selectedCameraId, selectCamera } from '../services/devices';
 import { webrtcService } from '../services/webrtc';
 import {
   MicIcon, MicOffIcon, VideoIcon, VideoOffIcon,
@@ -24,17 +23,11 @@ const CallControls: Component<CallControlsProps> = (props) => {
     props.onToggleSpeaker();
   };
 
-  // Cycle to the next available camera
   const handleFlipCamera = async () => {
-    const cams = cameras();
-    if (cams.length < 2 || switching()) return;
-    const currentId = selectedCameraId();
-    const currentIdx = cams.findIndex((c) => c.deviceId === currentId);
-    const nextCam = cams[(currentIdx + 1) % cams.length];
+    if (switching()) return;
     setSwitching(true);
     try {
-      selectCamera(nextCam.deviceId);
-      await webrtcService.switchCamera(nextCam.deviceId);
+      await webrtcService.flipCamera();
     } finally {
       setSwitching(false);
     }
@@ -112,8 +105,8 @@ const CallControls: Component<CallControlsProps> = (props) => {
         <span>Speaker</span>
       </div>
 
-      {/* Flip camera — only shown during video calls with 2+ cameras */}
-      <Show when={store.activeCallType === 'video' && cameras().length > 1}>
+      {/* Flip camera — shown during all video calls */}
+      <Show when={store.activeCallType === 'video'}>
         <div
           class="action-btn"
           onClick={() => { void handleFlipCamera(); }}
