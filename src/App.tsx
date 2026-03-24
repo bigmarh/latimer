@@ -19,6 +19,7 @@ import type { CallRecord, IncomingCallInfo, LatimerStore } from './types';
 import InstallBanner from './components/InstallBanner';
 import { requestNotificationPermission, showIncomingCallNotification } from './services/notifications';
 import { startKeepAlive, stopKeepAlive } from './services/keepAlive';
+import { startRingtone, stopRingtone } from './services/ringtone';
 
 // Dismiss the splash screen
 function dismissSplash() {
@@ -179,6 +180,7 @@ const App: Component = () => {
     const incoming = store.incomingCall;
     if (!incoming) return;
 
+    stopRingtone();
     setStore({
       callState: 'ringing',
       activeCallId: incoming.callId,
@@ -245,6 +247,7 @@ const App: Component = () => {
       startedAt: incoming.timestamp,
     });
 
+    stopRingtone();
     setStore({ incomingCall: null });
   };
 
@@ -340,6 +343,7 @@ const App: Component = () => {
         };
 
         setStore('incomingCall', incoming);
+        startRingtone();
         const callerName = knownContact?.displayName || knownContact?.name || `${fromPubkey.slice(0, 8)}…`;
         showIncomingCallNotification(callerName, incoming.callType);
         if (!knownContact) enrichUnknownCaller(fromPubkey);
