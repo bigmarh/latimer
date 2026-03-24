@@ -124,20 +124,9 @@ body,
   border-top: 1px solid var(--color-border);
 }
 
-/* Force NostrPass injected button to match app button size and use green */
-.nostrpass-btn-container,
-.nostrpass-btn-container > *,
-.nostrpass-btn-container button,
-.nostrpass-btn-container a {
-  width: 100% !important;
-  min-height: 48px !important;
-  border-radius: 0.75rem !important;
-  font-size: 0.875rem !important;
-  font-weight: 600 !important;
-  box-sizing: border-box !important;
-  background-color: #16a34a !important;
-  color: #fff !important;
-  border-color: transparent !important;
+/* NostrPass button container — sized via JS after injection */
+.nostrpass-btn-container {
+  width: 100%;
 }
 
 /* Scrollable area */

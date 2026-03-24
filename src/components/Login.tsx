@@ -184,6 +184,25 @@ const Login: Component<LoginProps> = (props) => {
           labelLocked: 'Unlock NostrPass',
           labelSignedIn: 'Connected',
         });
+
+        // Style the injected button directly — CSS can't reach it (inline styles / shadow DOM)
+        const styleBtn = () => {
+          const btn = containerRef.querySelector('button') ?? containerRef.firstElementChild as HTMLElement | null;
+          if (!btn) return;
+          (btn as HTMLElement).style.width = '100%';
+          (btn as HTMLElement).style.minHeight = '48px';
+          (btn as HTMLElement).style.borderRadius = '0.75rem';
+          (btn as HTMLElement).style.fontSize = '0.875rem';
+          (btn as HTMLElement).style.fontWeight = '600';
+          (btn as HTMLElement).style.backgroundColor = '#16a34a';
+          (btn as HTMLElement).style.color = '#fff';
+          (btn as HTMLElement).style.border = 'none';
+          (btn as HTMLElement).style.cursor = 'pointer';
+        };
+        setTimeout(styleBtn, 50);
+        const observer = new MutationObserver(styleBtn);
+        observer.observe(containerRef, { childList: true, subtree: true, attributes: true });
+        onCleanup(() => observer.disconnect());
       }
 
       const handleStatus = async (event: Event) => {
