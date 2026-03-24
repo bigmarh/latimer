@@ -441,6 +441,10 @@ const App: Component = () => {
     };
 
     if (!isIncognito && !opts?.skipContactLoad) {
+      // If we have cached contacts, dismiss the overlay immediately — relay fetch runs in background
+      const hasCached = !!localStorage.getItem(STORAGE_KEYS.contacts);
+      if (hasCached) setLoading(false);
+
       // Fetch own profile and contacts in parallel
       void loadProfile(pubkey, relays).then((profile) => {
         setStore('ownProfile', profile);
