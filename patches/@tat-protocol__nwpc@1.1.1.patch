@@ -1,0 +1,12 @@
+diff --git a/package.json b/package.json
+index d20950a3886672c4a953c4b95f985a288620b799..d2a88561c639d3488102faba32a596d843e9330c 100644
+--- a/package.json
++++ b/package.json
+@@ -41,6 +41,7 @@
+   "license": "MIT",
+   "dependencies": {
+     "nostr-tools": "^2.12.0",
++    "uuid": "^9.0.0",
+     "readline": "^1.3.0",
+     "@tat-protocol/types": "1.1.1",
+     "@tat-protocol/utils": "1.1.1",

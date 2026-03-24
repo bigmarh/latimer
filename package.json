@@ -26,9 +26,9 @@
     "@tat-protocol/types": "^1.1.1",
     "@tat-protocol/utils": "^1.1.1",
     "nostr-tools": "^2.7.0",
-    "uuid": "^9.0.0",
     "qrcode": "^1.5.4",
-    "solid-js": "^1.9.0"
+    "solid-js": "^1.9.0",
+    "uuid": "^9.0.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
@@ -40,5 +40,10 @@
     "vite": "^6.0.0",
     "vite-plugin-pwa": "^1.2.0",
     "vite-plugin-solid": "^2.10.0"
+  },
+  "pnpm": {
+    "patchedDependencies": {
+      "@tat-protocol/nwpc@1.1.1": "patches/@tat-protocol__nwpc@1.1.1.patch"
+    }
   }
 }
