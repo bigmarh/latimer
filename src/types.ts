@@ -74,6 +74,7 @@ export interface LatimerStore {
   view: 'home' | 'settings' | 'inbox' | 'incognitoLobby';
   recentCalls: CallRecord[];
   incognito: boolean;
+  joinedViaLink: boolean;
   joinInvite: { pubkey: string; relays: string[]; callType: 'audio' | 'video' } | null;
   viewProfilePubkey: string | null;
 }

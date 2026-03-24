@@ -24,6 +24,7 @@ const [store, setStore] = createStore<LatimerStore>({
   view: 'home',
   recentCalls: [],
   incognito: false,
+  joinedViaLink: false,
   joinInvite: null,
   viewProfilePubkey: null,
 });

@@ -17,6 +17,7 @@ import { createEphemeralSession, clearEphemeralSession, parseJoinUrl, parseProfi
 import { LATIMER_METHODS, STORAGE_KEYS, DEFAULT_RELAYS } from './constants';
 import type { CallRecord, IncomingCallInfo, LatimerStore } from './types';
 import InstallBanner from './components/InstallBanner';
+import PostCallWelcome from './pages/PostCallWelcome';
 import { requestNotificationPermission, showIncomingCallNotification } from './services/notifications';
 import { startKeepAlive, stopKeepAlive } from './services/keepAlive';
 import { startRingtone, stopRingtone } from './services/ringtone';
@@ -37,6 +38,7 @@ const App: Component = () => {
 
   const [localStream, setLocalStream] = createSignal<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = createSignal<MediaStream>(new MediaStream());
+  const [showPostCallWelcome, setShowPostCallWelcome] = createSignal(false);
 
   // Overlay stays mounted while loading OR while fading out, so Home renders first
   const [overlayVisible, setOverlayVisible] = createSignal(true);
@@ -89,7 +91,18 @@ const App: Component = () => {
       setLocalStream(null);
       setRemoteStream(new MediaStream());
     });
-    setTimeout(() => setStore({ callState: 'idle', activeCallContact: null, activeCallId: null }), 2_500);
+    setTimeout(() => {
+      if (store.incognito && store.joinedViaLink) {
+        clearEphemeralSession();
+        signalingService.destroy();
+        stopKeepAlive();
+        const wasLinkJoiner = true;
+        setStore({ callState: 'idle', activeCallContact: null, activeCallId: null, loggedIn: false, incognito: false, joinedViaLink: false, pubkey: '', contacts: [], recentCalls: [] });
+        if (wasLinkJoiner) setShowPostCallWelcome(true);
+      } else {
+        setStore({ callState: 'idle', activeCallContact: null, activeCallId: null });
+      }
+    }, 2_500);
   };
 
   // Watch call state changes for timer
@@ -148,12 +161,15 @@ const App: Component = () => {
     setRemoteStream(new MediaStream());
 
     if (store.incognito) {
-      // End incognito session entirely — go back to login
+      // End incognito session entirely
       clearEphemeralSession();
       signalingService.destroy();
+      stopKeepAlive();
+      const wasLinkJoiner = store.joinedViaLink;
       setStore({
         loggedIn: false,
         incognito: false,
+        joinedViaLink: false,
         pubkey: '',
         callState: 'idle',
         activeCallContact: null,
@@ -164,6 +180,10 @@ const App: Component = () => {
         contacts: [],
         recentCalls: [],
       });
+      if (wasLinkJoiner) {
+        // Show welcome/signup screen for users who joined via invite link
+        setShowPostCallWelcome(true);
+      }
     } else {
       setStore({
         callState: 'idle',
@@ -525,6 +545,7 @@ const App: Component = () => {
     if (!invite) return;
     const session = createEphemeralSession();
     const relays = invite.relays.length > 0 ? invite.relays : DEFAULT_RELAYS;
+    setStore('joinedViaLink', true);
     void initLogin(session.pubkey, relays, {
       signer: session.signer,
       skHex: session.skHex,
@@ -548,8 +569,9 @@ const App: Component = () => {
         webrtcService.onConnectionState = (state) => {
           if (state === 'connected') {
             setStore('callState', 'connected');
-          } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
-            setStore('callState', state === 'failed' ? 'failed' : 'ended');
+          } else if (state === 'failed' || state === 'closed') {
+            // Use handleDroppedCall so link joiners get the welcome screen
+            handleDroppedCall(state === 'failed');
           }
         };
         const videoEnabled = invite.callType === 'video';
@@ -674,8 +696,17 @@ const App: Component = () => {
         />
       </Show>
 
+      {/* Post-call welcome for users who joined via invite link */}
+      <Show when={showPostCallWelcome()}>
+        <PostCallWelcome
+          onSignUp={() => setShowPostCallWelcome(false)}
+          onLogin={() => setShowPostCallWelcome(false)}
+          onDismiss={() => setShowPostCallWelcome(false)}
+        />
+      </Show>
+
       {/* Normal login */}
-      <Show when={!store.loggedIn && store.joinInvite === null && store.viewProfilePubkey === null}>
+      <Show when={!store.loggedIn && store.joinInvite === null && store.viewProfilePubkey === null && !showPostCallWelcome()}>
         <Login onLogin={handleLogin} onLoginWithSigner={handleLoginWithSigner} onIncognito={handleIncognito} />
       </Show>
 
