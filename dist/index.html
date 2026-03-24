@@ -3,7 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.nostrpass.com 'wasm-unsafe-eval' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' wss: https:; img-src 'self' data: blob: https:; font-src 'self' data:; frame-src https://cdn.nostrpass.com;" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.nostrpass.com 'wasm-unsafe-eval' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' wss: https:; img-src 'self' data: blob: https:; font-src 'self' data:; frame-src https://cdn.nostrpass.com;" />
+    <!-- Capture window.nostr BEFORE any page scripts (CDN etc.) so we can detect real browser extensions -->
+    <script>window.__earlyNostr = window.nostr || null;</script>
     <script src="https://cdn.nostrpass.com/lite-embassy@0.1.2.js"></script>
 
     <!-- PWA & theme -->
@@ -101,8 +103,8 @@
         }
       }
     </style>
-    <script type="module" crossorigin src="/assets/index-Drumi8tz.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-CidWdArs.css">
+    <script type="module" crossorigin src="/assets/index-DzHK-ZDt.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-N2wIvdeZ.css">
   <script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script></head>
   <body>
     <!-- Splash screen — visible before Solid hydrates -->

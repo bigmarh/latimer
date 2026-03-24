@@ -13,6 +13,7 @@ interface EmbassyInstance {
     labelSignedIn?: string;
   }): void;
   installNostrProvider(opts: { overrideExisting?: boolean }): void;
+  logout(): Promise<void>;
 }
 
 interface LiteAuthState {
