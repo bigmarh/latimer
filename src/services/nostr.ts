@@ -68,18 +68,20 @@ export async function loadContacts(pubkey: string, relays: string[]): Promise<Co
                 },
                 oneose() {
                   profileSub.close();
+                  // Add this batch's results immediately so the 10s timeout
+                  // returns partial results instead of an empty array
+                  for (const pk of batch) {
+                    if (!contacts.some((c) => c.pubkey === pk)) {
+                      contacts.push(profileMap.get(pk) ?? { pubkey: pk });
+                    }
+                  }
                   remaining--;
                   if (remaining === 0) {
-                    // Build final contacts list preserving follow order
-                    for (const pk of followedPubkeys) {
-                      const contact = profileMap.get(pk);
-                      if (contact) {
-                        contacts.push(contact);
-                      } else {
-                        contacts.push({ pubkey: pk });
-                      }
-                    }
-                    resolve(contacts);
+                    // All batches done — resolve in follow order
+                    const ordered = followedPubkeys.map(
+                      (pk) => contacts.find((c) => c.pubkey === pk) ?? { pubkey: pk }
+                    );
+                    resolve(ordered);
                     followSub.close();
                   }
                 },

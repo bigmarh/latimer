@@ -5,6 +5,7 @@ import { DEFAULT_RELAYS } from './constants';
 const [store, setStore] = createStore<LatimerStore>({
   loggedIn: false,
   pubkey: '',
+  ownProfile: null,
   relays: DEFAULT_RELAYS,
   loading: false,
   loadingMessage: '',

@@ -35,7 +35,7 @@ const LinkExplainerModal: Component<LinkExplainerModalProps> = (props) => {
       onClick={props.onCancel}
     >
       <div
-        class="w-full max-w-[420px] rounded-[28px] p-5"
+        class="w-full max-w-[500px] rounded-[28px] p-5"
         style={{
           background: 'linear-gradient(180deg, rgba(28,30,42,0.98) 0%, rgba(18,20,29,0.98) 100%)',
           border: '1px solid rgba(255,255,255,0.08)',

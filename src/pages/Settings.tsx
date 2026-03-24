@@ -66,9 +66,7 @@ const Settings: Component = () => {
     setShowQR(true);
   };
 
-  // Find current user's contact profile
-  const profile = () =>
-    store.contacts.find((c) => c.pubkey === store.pubkey) ?? { pubkey: store.pubkey };
+  const profile = () => store.ownProfile ?? { pubkey: store.pubkey };
 
   const displayName = () => getDisplayName(profile());
   const initials = () => getAvatarInitials(profile());

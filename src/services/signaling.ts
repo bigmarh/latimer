@@ -21,6 +21,8 @@ type MethodHandler = (params: Record<string, unknown>, fromPubkey: string, times
 class LatimerSignaling {
   private worker: Worker | null = null;
   private signer: Signer | null = null;
+  // Captured at init time so nos2x re-injecting window.nostr doesn't steal signing
+  private capturedNostr: typeof window.nostr | null = null;
   private relays: string[] = [];
   private handlers = new Map<string, MethodHandler>();
   private awaitCbs = new Map<string, { resolve: () => void; reject: (e: Error) => void }>();
@@ -28,7 +30,16 @@ class LatimerSignaling {
   async init(relays: string[], customSigner?: Signer, skHex?: string): Promise<string> {
     this.destroy();
 
-    this.signer = customSigner ?? new NIP07Signer();
+    if (customSigner) {
+      this.signer = customSigner;
+      this.capturedNostr = null;
+    } else {
+      // Capture window.nostr NOW — nos2x may re-inject later and reclaim window.nostr,
+      // but our reference to the NostrPass provider object stays valid.
+      this.capturedNostr = window.nostr ?? null;
+      this.signer = new NIP07Signer();
+    }
+    console.log('[Signaling] init — signer type:', customSigner ? customSigner.constructor.name : 'NIP07Signer', '| capturedNostr:', this.capturedNostr ? 'captured' : 'none', '| skHex:', skHex ? 'provided' : 'none', '| window.nostr:', window.nostr ? 'present' : 'absent');
     this.relays = relays;
 
     this.worker = new Worker(
@@ -84,16 +95,30 @@ class LatimerSignaling {
   }
 
   private async _proxySignerRequest(id: string, op: string, params: Record<string, unknown>) {
-    if (!this.signer || !this.worker) return;
+    if (!this.worker) return;
+    const nostr = this.capturedNostr;
+    console.log('[Signaling] proxySignerRequest — op:', op, '| capturedNostr:', nostr ? 'yes' : 'none');
     try {
       let result: unknown;
-      if (op === 'getPublicKey') result = await this.signer.getPublicKey();
-      else if (op === 'sign') result = await this.signer.sign(new Uint8Array(params.message as number[]));
-      else if (op === 'signEvent') result = await this.signer.signEvent(params.event as Parameters<Signer['signEvent']>[0]);
-      else if (op === 'nip44.encrypt') result = await this.signer.nip44.encrypt(params.recipientPubkey as string, params.plaintext as string);
-      else if (op === 'nip44.decrypt') result = await this.signer.nip44.decrypt(params.senderPubkey as string, params.ciphertext as string);
+      // Use capturedNostr directly if available — prevents nos2x from intercepting
+      // by re-claiming window.nostr after NostrPass installed its provider.
+      if (nostr) {
+        if (op === 'getPublicKey') result = await nostr.getPublicKey();
+        else if (op === 'signEvent') result = await nostr.signEvent(params.event as Parameters<NonNullable<typeof window.nostr>['signEvent']>[0]);
+        else if (op === 'nip44.encrypt') result = await (nostr.nip44?.encrypt ?? nostr.nip04.encrypt).call(nostr.nip44 ?? nostr.nip04, params.recipientPubkey as string, params.plaintext as string);
+        else if (op === 'nip44.decrypt') result = await (nostr.nip44?.decrypt ?? nostr.nip04.decrypt).call(nostr.nip44 ?? nostr.nip04, params.senderPubkey as string, params.ciphertext as string);
+        else if (op === 'sign' && this.signer) result = await this.signer.sign(new Uint8Array(params.message as number[]));
+      } else if (this.signer) {
+        if (op === 'getPublicKey') result = await this.signer.getPublicKey();
+        else if (op === 'sign') result = await this.signer.sign(new Uint8Array(params.message as number[]));
+        else if (op === 'signEvent') result = await this.signer.signEvent(params.event as Parameters<Signer['signEvent']>[0]);
+        else if (op === 'nip44.encrypt') result = await this.signer.nip44.encrypt(params.recipientPubkey as string, params.plaintext as string);
+        else if (op === 'nip44.decrypt') result = await this.signer.nip44.decrypt(params.senderPubkey as string, params.ciphertext as string);
+      }
+      console.log('[Signaling] proxySignerRequest — op:', op, 'succeeded');
       this.worker.postMessage({ type: 'signerResponse', id, result });
     } catch (err) {
+      console.error('[Signaling] proxySignerRequest — op:', op, 'FAILED:', err);
       this.worker.postMessage({ type: 'signerResponse', id, error: String(err) });
     }
   }
@@ -136,6 +161,7 @@ class LatimerSignaling {
       this.worker = null;
     }
     this.signer = null;
+    this.capturedNostr = null;
     this.relays = [];
     this.handlers.clear();
     this.awaitCbs.clear();

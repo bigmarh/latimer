@@ -55,6 +55,7 @@ export interface SignalingMessage {
 export interface LatimerStore {
   loggedIn: boolean;
   pubkey: string;
+  ownProfile: Contact | null;
   relays: string[];
   loading: boolean;
   loadingMessage: string;

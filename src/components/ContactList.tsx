@@ -222,7 +222,7 @@ const ContactList: Component<ContactListProps> = (props) => {
           onClick={() => setShowAddModal(false)}
         >
           <div
-            class="w-full max-w-[430px] p-6 rounded-t-2xl"
+            class="w-full max-w-[500px] p-6 rounded-t-2xl"
             style={{ background: 'var(--color-surface)' }}
             onClick={(e) => e.stopPropagation()}
           >

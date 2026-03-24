@@ -102,6 +102,7 @@ const Home: Component = () => {
       console.error('[Home] Failed to create or send offer:', err);
       setStore({ callState: 'failed', activeCallContact: null, activeCallId: null });
       webrtcService.cleanup();
+      setTimeout(() => setStore({ callState: 'idle' }), 2_500);
     }
   };
 

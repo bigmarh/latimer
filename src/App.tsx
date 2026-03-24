@@ -441,7 +441,10 @@ const App: Component = () => {
     };
 
     if (!isIncognito && !opts?.skipContactLoad) {
-      // Refresh contacts from Nostr in background
+      // Fetch own profile and contacts in parallel
+      void loadProfile(pubkey, relays).then((profile) => {
+        setStore('ownProfile', profile);
+      });
       loadContacts(pubkey, relays)
         .then((contacts) => {
           if (contacts.length > 0) {
@@ -553,6 +556,8 @@ const App: Component = () => {
 
     // Try auto-login from saved credentials — keep splash up until we know the result
     const savedPubkey = localStorage.getItem(STORAGE_KEYS.pubkey);
+    const loginMethod = localStorage.getItem(STORAGE_KEYS.loginMethod);
+    console.log('[App] onMount — savedPubkey:', savedPubkey ? `${savedPubkey.slice(0, 8)}…` : 'none', '| loginMethod:', loginMethod, '| window.nostr:', window.nostr ? 'present' : 'absent');
     const savedRelays = (() => {
       try {
         const raw = localStorage.getItem(STORAGE_KEYS.relays);
@@ -562,23 +567,29 @@ const App: Component = () => {
       }
     })();
 
-    if (savedPubkey) {
+    // For NostrPass logins, skip window.nostr — nos2x may answer first and get bound
+    // as the signer. Let the Login component mount and NostrPass fire its status event.
+    if (savedPubkey && loginMethod !== 'nostrpass') {
       const nostr = window.nostr;
+      console.log('[App] Attempting extension auto-login. window.nostr:', nostr ? 'present' : 'absent');
       if (nostr) {
         try {
           const pk = await nostr.getPublicKey();
+          console.log('[App] Extension pubkey:', pk ? `${pk.slice(0, 8)}…` : 'none', '| matches saved:', pk === savedPubkey);
           if (pk === savedPubkey) {
             await initLogin(savedPubkey, savedRelays);
             dismissSplash();
             return;
           }
-        } catch {
-          // nostr provider not ready yet
+        } catch (err) {
+          console.warn('[App] Extension getPublicKey failed:', err);
         }
       }
+    } else if (loginMethod === 'nostrpass') {
+      console.log('[App] NostrPass login method — skipping window.nostr auto-login, showing Login screen');
     }
 
-    // No auto-login — show login screen
+    // No auto-login (or nostrpass user) — show login screen; NostrPass will auto-login
     setLoading(false);
     dismissSplash();
   });

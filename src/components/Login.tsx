@@ -1,5 +1,5 @@
 import type { Component } from 'solid-js';
-import { onMount, createSignal, Show } from 'solid-js';
+import { onMount, onCleanup, createSignal, Show } from 'solid-js';
 import { nip19 } from 'nostr-tools';
 import { KeySigner } from '@tat-protocol/signers';
 import { DEFAULT_RELAYS, STORAGE_KEYS } from '../constants';
@@ -42,8 +42,15 @@ let embassyInstance: EmbassyInstance | null = null;
 
 export async function logoutNostrPass(): Promise<void> {
   if (embassyInstance) {
-    try { await embassyInstance.logout(); } catch { /* ignore */ }
+    try {
+      await embassyInstance.logout();
+      console.log('[Login] NostrPass logout succeeded');
+    } catch (err) {
+      console.warn('[Login] NostrPass logout failed (vault may still be authenticated):', err);
+    }
     embassyInstance = null;
+  } else {
+    console.warn('[Login] logoutNostrPass called but embassyInstance is null');
   }
 }
 
@@ -85,6 +92,11 @@ const Login: Component<LoginProps> = (props) => {
   let containerRef: HTMLDivElement | undefined;
   // Captured BEFORE NostrPass overrides window.nostr
   let realExtension: typeof window.nostr | null = null;
+  // Prevent repeated login calls — nostrpass-lite:status fires on every Nostr event
+  let hasLoggedIn = false;
+  // Only auto-login from status if returning user (loginMethod saved) or user explicitly
+  // clicked the NostrPass button — prevents auto-relogin after logout when vault session persists
+  let nostrPassClicked = false;
   const [hasExtension, setHasExtension] = createSignal(false);
   const [extLoading, setExtLoading] = createSignal(false);
   const [extError, setExtError] = createSignal('');
@@ -111,6 +123,7 @@ const Login: Component<LoginProps> = (props) => {
       const pubkey = await ext.getPublicKey();
       localStorage.setItem(STORAGE_KEYS.pubkey, pubkey);
       localStorage.setItem(STORAGE_KEYS.relays, JSON.stringify(relays));
+      localStorage.setItem(STORAGE_KEYS.loginMethod, 'extension');
       props.onLogin(pubkey, relays);
     } catch (err) {
       setExtError('Extension denied access');
@@ -146,15 +159,23 @@ const Login: Component<LoginProps> = (props) => {
   };
 
   onMount(async () => {
-    // __earlyNostr is captured by an inline script in index.html BEFORE the NostrPass
-    // CDN script loads, so it only contains a real browser extension (nos2x, Alby) or null.
-    const earlyNostr = (window as Window & { __earlyNostr?: typeof window.nostr }).__earlyNostr ?? null;
+    // Give late-injecting extensions (Alby uses document_end/idle) a tick to install
+    // window.nostr before we check. __earlyNostr only catches document_start extensions
+    // (nos2x). NostrPass isn't installed yet so window.nostr is still the real extension.
+    await new Promise<void>(resolve => setTimeout(resolve, 100));
+    const earlyNostr = (window as Window & { __earlyNostr?: typeof window.nostr }).__earlyNostr
+      ?? window.nostr
+      ?? null;
+    console.log('[Login] onMount — earlyNostr:', earlyNostr ? 'found' : 'none', '| window.nostr:', window.nostr ? 'present' : 'absent');
     if (earlyNostr) {
       realExtension = earlyNostr;
       setHasExtension(true);
+      console.log('[Login] Real extension detected (nos2x/Alby)');
     }
     try {
+      console.log('[Login] Initializing NostrPass embassy…');
       const embassy = await getOrInitEmbassy(relays);
+      console.log('[Login] Embassy initialized. window.nostr after init:', window.nostr ? 'present' : 'absent');
 
       if (containerRef) {
         embassy.createNostrPassLiteButton({
@@ -167,21 +188,32 @@ const Login: Component<LoginProps> = (props) => {
 
       const handleStatus = async (event: Event) => {
         const status = (event as CustomEvent<NostrPassLiteStatus>).detail;
-        if (status.kind === 'ready' && status.auth?.isAuthenticated && !status.auth?.isLocked) {
+        const savedLoginMethod = localStorage.getItem(STORAGE_KEYS.loginMethod);
+        console.log('[Login] nostrpass-lite:status —', status.kind, '| authenticated:', status.auth?.isAuthenticated, '| locked:', status.auth?.isLocked, '| hasLoggedIn:', hasLoggedIn, '| nostrPassClicked:', nostrPassClicked, '| loginMethod:', savedLoginMethod);
+        const allowAutoLogin = savedLoginMethod === 'nostrpass' || nostrPassClicked;
+        if (!hasLoggedIn && allowAutoLogin && status.kind === 'ready' && status.auth?.isAuthenticated && !status.auth?.isLocked) {
+          hasLoggedIn = true;
+          console.log('[Login] NostrPass ready+authenticated — installing provider…');
           try {
-            // publicKey may be on the auth state directly; fall back to window.nostr
+            // Always install NostrPass as window.nostr so the signaling worker uses it
+            embassy.installNostrProvider({ overrideExisting: true });
+            console.log('[Login] Provider installed. window.nostr now:', window.nostr ? 'present' : 'absent');
+
             let pubkey = status.auth.publicKey;
+            console.log('[Login] pubkey from status.auth:', pubkey ? `${pubkey.slice(0, 8)}…` : 'none — will call getPublicKey');
             if (!pubkey) {
-              embassy.installNostrProvider({ overrideExisting: true });
               const nostr = window.nostr;
               if (!nostr) {
                 console.warn('[Login] window.nostr not available after installNostrProvider');
                 return;
               }
               pubkey = await nostr.getPublicKey();
+              console.log('[Login] pubkey from getPublicKey:', pubkey ? `${pubkey.slice(0, 8)}…` : 'FAILED');
             }
             localStorage.setItem(STORAGE_KEYS.pubkey, pubkey);
             localStorage.setItem(STORAGE_KEYS.relays, JSON.stringify(relays));
+            localStorage.setItem(STORAGE_KEYS.loginMethod, 'nostrpass');
+            console.log('[Login] Calling onLogin with pubkey:', pubkey.slice(0, 8), '…');
             props.onLogin(pubkey, relays);
           } catch (err) {
             console.error('[Login] Failed to get public key:', err);
@@ -190,6 +222,8 @@ const Login: Component<LoginProps> = (props) => {
       };
 
       window.addEventListener('nostrpass-lite:status', handleStatus);
+      onCleanup(() => window.removeEventListener('nostrpass-lite:status', handleStatus));
+      console.log('[Login] Status listener attached');
     } catch (err) {
       console.error('[Login] Failed to initialize NostrPass:', err);
     }
@@ -226,7 +260,29 @@ const Login: Component<LoginProps> = (props) => {
       </p>
 
       {/* NostrPass button container — flex+center so injected button is centered */}
-      <div ref={containerRef} class="w-full max-w-xs flex justify-center" />
+      {/* onClick marks explicit user intent so status handler can allow auto-login */}
+      <div ref={containerRef} class="nostrpass-btn-container w-full max-w-xs flex justify-center" onClick={() => { nostrPassClicked = true; }} />
+
+      {/* Extension button — shown prominently when a NIP-07 extension is detected */}
+      <Show when={hasExtension()}>
+        <button
+          class="w-full max-w-xs mt-3 py-3 rounded-xl font-medium text-sm flex items-center justify-center gap-2"
+          style={{
+            background: 'var(--color-surface)',
+            color: extLoading() ? 'var(--color-text-dim)' : 'var(--color-text)',
+            border: '1px solid var(--color-border)',
+            cursor: extLoading() ? 'not-allowed' : 'pointer',
+            opacity: extLoading() ? '0.6' : '1',
+          }}
+          onClick={handleExtensionLogin}
+          disabled={extLoading()}
+        >
+          🔌 {extLoading() ? 'Connecting…' : 'Sign in with Extension'}
+        </button>
+        <Show when={extError()}>
+          <p class="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{extError()}</p>
+        </Show>
+      </Show>
 
       {/* Divider */}
       <div class="flex items-center gap-3 w-full max-w-xs mt-4">
@@ -264,30 +320,6 @@ const Login: Component<LoginProps> = (props) => {
           class="w-full max-w-xs mt-2 rounded-xl overflow-hidden flex flex-col gap-0"
           style={{ border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}
         >
-          {/* Extension / Switch Account */}
-          <div class="px-4 py-3" style={{ 'border-bottom': '1px solid var(--color-border)' }}>
-            <p class="text-xs mb-2" style={{ color: 'var(--color-text-dim)' }}>
-              Switch account or use a NIP-07 extension (Alby, nos2x…)
-            </p>
-            <button
-              class="w-full py-2 rounded-lg font-medium text-sm flex items-center justify-center gap-2"
-              style={{
-                background: 'var(--color-bg)',
-                color: hasExtension() ? 'var(--color-text)' : 'var(--color-text-dim)',
-                border: '1px solid var(--color-border)',
-                cursor: extLoading() || !hasExtension() ? 'not-allowed' : 'pointer',
-                opacity: extLoading() || !hasExtension() ? '0.5' : '1',
-              }}
-              onClick={handleExtensionLogin}
-              disabled={extLoading() || !hasExtension()}
-            >
-              🔌 {extLoading() ? 'Connecting…' : hasExtension() ? 'Sign in with Extension' : 'No extension detected'}
-            </button>
-            <Show when={extError()}>
-              <p class="text-xs mt-1 text-center" style={{ color: 'var(--color-danger)' }}>{extError()}</p>
-            </Show>
-          </div>
-
           {/* nsec */}
           <div class="px-4 py-3">
             <p class="text-xs mb-2" style={{ color: 'var(--color-text-dim)' }}>
