@@ -200,7 +200,8 @@ const App: Component = () => {
     webrtcService.onConnectionState = (state) => {
       if (state === 'connected') {
         setStore('callState', 'connected');
-      } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+      } else if (state === 'failed' || state === 'closed') {
+        // 'disconnected' is transient and may recover — only tear down on terminal states
         handleDroppedCall(state === 'failed');
       }
     };

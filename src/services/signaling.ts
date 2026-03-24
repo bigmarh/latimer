@@ -45,14 +45,15 @@ class LatimerSignaling {
       this.signerSecretKeyHex = null;
     }
     console.log('[Signaling] init — signer type:', customSigner ? customSigner.constructor.name : 'NIP07Signer', '| capturedNostr:', this.capturedNostr ? 'captured' : 'none', '| skHex:', skHex ? 'provided' : 'none', '| window.nostr:', window.nostr ? 'present' : 'absent');
-    this.relays = relays;
+    // Spread to plain array — SolidJS store values are Proxies which can't be postMessage'd
+    this.relays = [...relays];
 
     this.worker = new Worker(
       new URL('../workers/signaling.worker.ts', import.meta.url),
       { type: 'module' },
     );
 
-    const initMsg: Record<string, unknown> = { type: 'init', relays };
+    const initMsg: Record<string, unknown> = { type: 'init', relays: [...relays] };
     if (skHex) initMsg.sk = skHex; // KeySigner runs fully in worker; no proxy needed
     // Restore the NWPC Bloom filter so already-seen events skip decryption this session
     const savedNwpcState = localStorage.getItem(STORAGE_KEYS.nwpcState);
