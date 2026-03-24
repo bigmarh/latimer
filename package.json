@@ -1,9 +1,13 @@
 {
   "name": "latimer",
   "version": "0.1.0",
-  "description": "Latimer — Nostr-powered video calling. FaceTime for Nostr.",
+  "description": "Latimer — FaceTime for Nostr. End-to-end encrypted video and audio calls.",
   "type": "module",
   "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
