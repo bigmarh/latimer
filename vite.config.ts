@@ -1,4 +1,5 @@
-import { defineConfig } from "vite";
+import { defineConfig, normalizePath } from "vite";
+import { resolve } from "path";
 import solid from "vite-plugin-solid";
 import tailwindcss from "@tailwindcss/vite";
 import basicSsl from "@vitejs/plugin-basic-ssl";
@@ -38,6 +39,9 @@ export default defineConfig({
   },
   resolve: {
     conditions: ["browser", "import", "module", "default"],
+    alias: {
+      uuid: resolve("node_modules/uuid"),
+    },
   },
   optimizeDeps: {
     include: ["solid-js", "solid-js/web"],
