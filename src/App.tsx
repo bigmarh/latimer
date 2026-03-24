@@ -16,6 +16,7 @@ import { loadContacts, loadProfile } from './services/nostr';
 import { createEphemeralSession, clearEphemeralSession, parseJoinUrl, parseProfileUrl } from './services/ephemeral';
 import { LATIMER_METHODS, STORAGE_KEYS, DEFAULT_RELAYS } from './constants';
 import type { CallRecord, IncomingCallInfo, LatimerStore } from './types';
+import InstallBanner from './components/InstallBanner';
 
 // Dismiss the splash screen
 function dismissSplash() {
@@ -598,6 +599,7 @@ const App: Component = () => {
 
   return (
     <div style={{ background: 'var(--color-bg)', height: '100%' }}>
+      <InstallBanner />
       {/* Loading overlay — fades out so Home renders underneath before it disappears */}
       <Show when={overlayVisible()}>
         <div

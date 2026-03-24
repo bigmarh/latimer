@@ -39,6 +39,7 @@ declare global {
 
 // Module-level singleton
 let embassyInstance: EmbassyInstance | null = null;
+const NOSTR_PASS_SIGN_IN_BORDER = 'rgb(128 253 73)';
 
 export async function logoutNostrPass(): Promise<void> {
   if (embassyInstance) {
@@ -179,7 +180,7 @@ const Login: Component<LoginProps> = (props) => {
     if (btn.textContent?.trim() === 'Sign in with NostrPass') {
       btn.style.backgroundColor = '#16a34a';
       btn.style.color = '#fff';
-      btn.style.border = '1px solid #15803d';
+      btn.style.border = `1px solid ${NOSTR_PASS_SIGN_IN_BORDER}`;
     } else {
       btn.style.backgroundColor = '';
       btn.style.color = '';
@@ -347,7 +348,7 @@ const Login: Component<LoginProps> = (props) => {
             style={{
               background: '#16a34a',
               color: '#fff',
-              border: '1px solid #15803d',
+              border: `1px solid ${NOSTR_PASS_SIGN_IN_BORDER}`,
               cursor: nostrPassLoading() ? 'not-allowed' : 'pointer',
               opacity: nostrPassLoading() ? '0.7' : '1',
             }}
