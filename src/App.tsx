@@ -17,6 +17,8 @@ import { createEphemeralSession, clearEphemeralSession, parseJoinUrl, parseProfi
 import { LATIMER_METHODS, STORAGE_KEYS, DEFAULT_RELAYS } from './constants';
 import type { CallRecord, IncomingCallInfo, LatimerStore } from './types';
 import InstallBanner from './components/InstallBanner';
+import { requestNotificationPermission, showIncomingCallNotification } from './services/notifications';
+import { startKeepAlive, stopKeepAlive } from './services/keepAlive';
 
 // Dismiss the splash screen
 function dismissSplash() {
@@ -75,6 +77,7 @@ const App: Component = () => {
     stopDurationTimer();
     signalingService.destroy();
     webrtcService.cleanup();
+    stopKeepAlive();
   });
 
   const logCall = (
@@ -310,6 +313,8 @@ const App: Component = () => {
         };
 
         setStore('incomingCall', incoming);
+        const callerName = knownContact?.displayName || knownContact?.name || `${fromPubkey.slice(0, 8)}…`;
+        showIncomingCallNotification(callerName, incoming.callType);
         if (!knownContact) enrichUnknownCaller(fromPubkey);
       });
 
@@ -430,6 +435,10 @@ const App: Component = () => {
     }
 
     await initSignaling(relays, opts?.signer, opts?.skHex);
+
+    // Request notification permission and start keep-alive audio after login (user gesture context)
+    void requestNotificationPermission();
+    startKeepAlive();
 
     // Dismiss the splash/loading overlay as soon as signaling is ready — ContactList
     // skeleton cards handle the contacts-loading state without blocking the whole app.
