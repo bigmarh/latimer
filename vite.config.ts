@@ -1,14 +1,11 @@
 import { defineConfig } from "vite";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import solid from "vite-plugin-solid";
 import tailwindcss from "@tailwindcss/vite";
 import basicSsl from "@vitejs/plugin-basic-ssl";
 import { VitePWA } from "vite-plugin-pwa";
 
-const require = createRequire(import.meta.url);
-const uuidPackageRoot = dirname(require.resolve("uuid/package.json"));
-const uuidBrowserEntry = join(uuidPackageRoot, "dist/esm-browser/index.js");
+const uuidShimEntry = fileURLToPath(new URL("./src/shims/uuid.ts", import.meta.url));
 
 export default defineConfig({
   plugins: [
@@ -45,7 +42,7 @@ export default defineConfig({
   resolve: {
     conditions: ["browser", "import", "module", "default"],
     alias: {
-      uuid: uuidBrowserEntry,
+      uuid: uuidShimEntry,
     },
   },
   optimizeDeps: {
