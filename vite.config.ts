@@ -1,23 +1,17 @@
 import { defineConfig } from "vite";
-import { resolve } from "path";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import solid from "vite-plugin-solid";
 import tailwindcss from "@tailwindcss/vite";
 import basicSsl from "@vitejs/plugin-basic-ssl";
 import { VitePWA } from "vite-plugin-pwa";
 
-const resolveUuid = () => ({
-  name: 'resolve-uuid',
-  resolveId(id: string) {
-    if (id === 'uuid') {
-      return resolve('node_modules/uuid/dist/esm-browser/index.js');
-    }
-    return null;
-  },
-});
+const require = createRequire(import.meta.url);
+const uuidPackageRoot = dirname(require.resolve("uuid/package.json"));
+const uuidBrowserEntry = join(uuidPackageRoot, "dist/esm-browser/index.js");
 
 export default defineConfig({
   plugins: [
-    resolveUuid(),
     tailwindcss(),
     solid(),
     basicSsl(),
@@ -50,7 +44,9 @@ export default defineConfig({
   },
   resolve: {
     conditions: ["browser", "import", "module", "default"],
-    alias: {},
+    alias: {
+      uuid: uuidBrowserEntry,
+    },
   },
   optimizeDeps: {
     include: ["solid-js", "solid-js/web"],
