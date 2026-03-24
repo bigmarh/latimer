@@ -159,10 +159,9 @@ const Login: Component<LoginProps> = (props) => {
   };
 
   onMount(async () => {
-    // Give late-injecting extensions (Alby uses document_end/idle) a tick to install
-    // window.nostr before we check. __earlyNostr only catches document_start extensions
-    // (nos2x). NostrPass isn't installed yet so window.nostr is still the real extension.
-    await new Promise<void>(resolve => setTimeout(resolve, 100));
+    // Wait for window.load so late-injecting extensions (Alby, etc.) have finished
+    // injecting window.nostr. NostrPass isn't installed yet at this point.
+    await new Promise<void>(resolve => window.addEventListener('load', resolve, { once: true }));
     const earlyNostr = (window as Window & { __earlyNostr?: typeof window.nostr }).__earlyNostr
       ?? window.nostr
       ?? null;
