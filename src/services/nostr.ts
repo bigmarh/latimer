@@ -92,7 +92,7 @@ async function loadLatestEvent(
   });
 }
 
-async function resolveUserRelays(pubkey: string, relays: string[]): Promise<string[]> {
+export async function resolveUserRelays(pubkey: string, relays: string[]): Promise<string[]> {
   const seedRelays = mergeRelays(relays, DISCOVERY_RELAYS);
   const cacheKey = `${pubkey}:${seedRelays.join(',')}`;
   const cached = relayResolutionCache.get(cacheKey);

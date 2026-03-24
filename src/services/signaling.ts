@@ -2,9 +2,10 @@ import { NIP07Signer } from '@tat-protocol/signers';
 import type { Signer } from '@tat-protocol/types';
 import { WrapWithSigner } from '@tat-protocol/utils';
 import NDK from '@nostr-dev-kit/ndk';
-import { SimplePool } from 'nostr-tools';
+import { SimplePool, nip04 } from 'nostr-tools';
 import type { LatimerMethod } from '../types';
 import { STORAGE_KEYS } from '../constants';
+import { resolveUserRelays } from './nostr';
 
 type MethodHandler = (params: Record<string, unknown>, fromPubkey: string, timestamp: number) => void;
 
@@ -24,6 +25,7 @@ class LatimerSignaling {
   private signer: Signer | null = null;
   // Captured at init time so nos2x re-injecting window.nostr doesn't steal signing
   private capturedNostr: typeof window.nostr | null = null;
+  private signerSecretKeyHex: string | null = null;
   private relays: string[] = [];
   private handlers = new Map<string, MethodHandler>();
   private awaitCbs = new Map<string, { resolve: () => void; reject: (e: Error) => void }>();
@@ -34,11 +36,13 @@ class LatimerSignaling {
     if (customSigner) {
       this.signer = customSigner;
       this.capturedNostr = null;
+      this.signerSecretKeyHex = skHex ?? null;
     } else {
       // Capture window.nostr NOW — nos2x may re-inject later and reclaim window.nostr,
       // but our reference to the NostrPass provider object stays valid.
       this.capturedNostr = window.nostr ?? null;
       this.signer = new NIP07Signer();
+      this.signerSecretKeyHex = null;
     }
     console.log('[Signaling] init — signer type:', customSigner ? customSigner.constructor.name : 'NIP07Signer', '| capturedNostr:', this.capturedNostr ? 'captured' : 'none', '| skHex:', skHex ? 'provided' : 'none', '| window.nostr:', window.nostr ? 'present' : 'absent');
     this.relays = relays;
@@ -152,15 +156,99 @@ class LatimerSignaling {
     } catch { return null; }
   }
 
-  async sendDirectMessage(to: string, content: string): Promise<void> {
+  private isPublishSuccessReason(reason: string): boolean {
+    return !reason.startsWith('connection failure:')
+      && reason !== 'duplicate url'
+      && reason !== 'connection skipped by allowConnectingToRelay';
+  }
+
+  private async publishEvent(event: Parameters<SimplePool['publish']>[1], relays: string[]): Promise<void> {
+    const pool = new SimplePool();
+    try {
+      const results = await Promise.allSettled(pool.publish(relays, event));
+      const successCount = results.filter((result) =>
+        result.status === 'fulfilled' && this.isPublishSuccessReason(result.value),
+      ).length;
+
+      if (successCount > 0) return;
+
+      const details = results.map((result) =>
+        result.status === 'fulfilled' ? result.value : result.reason instanceof Error ? result.reason.message : String(result.reason),
+      ).join('; ');
+      throw new Error(`[Signaling] Failed to publish event to any relay${details ? `: ${details}` : ''}`);
+    } finally {
+      pool.destroy();
+    }
+  }
+
+  private async encryptLegacyDirectMessage(to: string, content: string): Promise<string> {
+    if (this.capturedNostr?.nip04) {
+      return this.capturedNostr.nip04.encrypt(to, content);
+    }
+
+    const signerWithNip04 = this.signer as (Signer & {
+      nip04?: {
+        encrypt(pubkey: string, plaintext: string): Promise<string>;
+      };
+    }) | null;
+
+    if (signerWithNip04?.nip04?.encrypt) {
+      return signerWithNip04.nip04.encrypt(to, content);
+    }
+
+    if (this.signerSecretKeyHex) {
+      return nip04.encrypt(this.signerSecretKeyHex, to, content);
+    }
+
+    throw new Error('[Signaling] Legacy kind 4 DM encryption unavailable');
+  }
+
+  async sendDirectMessage(to: string, content: string, format: 'kind4' | 'nip17' | 'both' = 'nip17'): Promise<void> {
     if (!this.signer) throw new Error('[Signaling] Not initialized');
-    const relays = this.relays;
+    const relays = await resolveUserRelays(to, this.relays);
     if (relays.length === 0) throw new Error('[Signaling] No relays configured');
+
+    if (format === 'both') {
+      const errors: string[] = [];
+
+      try {
+        await this.sendDirectMessage(to, content, 'kind4');
+      } catch (err) {
+        errors.push(`kind4: ${err instanceof Error ? err.message : String(err)}`);
+      }
+
+      try {
+        await this.sendDirectMessage(to, content, 'nip17');
+      } catch (err) {
+        errors.push(`nip17: ${err instanceof Error ? err.message : String(err)}`);
+      }
+
+      if (errors.length === 2) {
+        throw new Error(`[Signaling] Direct message failed in both formats: ${errors.join(' | ')}`);
+      }
+
+      if (errors.length > 0) {
+        console.warn('[Signaling] Direct message partially failed:', errors.join(' | '));
+      }
+      return;
+    }
+
+    if (format === 'kind4') {
+      const encrypted = await this.encryptLegacyDirectMessage(to, content);
+      const signed = await this.signer.signEvent({
+        kind: 4,
+        content: encrypted,
+        tags: [['p', to]],
+        created_at: Math.floor(Date.now() / 1000),
+      });
+      await this.publishEvent(signed as Parameters<SimplePool['publish']>[1], relays);
+      return;
+    }
+
     const ndk = new NDK() as unknown as Parameters<typeof WrapWithSigner>[0];
     const wrapped = await WrapWithSigner(ndk, content, this.signer, to);
     const rawEvent = wrapped.rawEvent() as Parameters<SimplePool['publish']>[1];
-    const pool = new SimplePool();
-    await Promise.allSettled(pool.publish(relays, rawEvent));
+    await this.publishEvent(rawEvent, relays);
   }
 
   destroy(): void {
@@ -171,6 +259,7 @@ class LatimerSignaling {
     }
     this.signer = null;
     this.capturedNostr = null;
+    this.signerSecretKeyHex = null;
     this.relays = [];
     this.handlers.clear();
     this.awaitCbs.clear();

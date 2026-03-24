@@ -59,7 +59,7 @@ const Home: Component = () => {
     const npub = nip19.npubEncode(store.pubkey);
     const inviteUrl = buildInviteUrl(npub, store.relays, 'audio');
     const message = buildCallInviteMessage(inviteUrl, 'audio');
-    await signalingService.sendDirectMessage(contact.pubkey, message);
+    await signalingService.sendDirectMessage(contact.pubkey, message, 'kind4');
     return true;
   };
 
