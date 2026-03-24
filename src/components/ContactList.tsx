@@ -8,6 +8,7 @@ import { loadProfile, publishFollowList } from '../services/nostr';
 import { signalingService } from '../services/signaling';
 import { STORAGE_KEYS } from '../constants';
 import { SearchIcon, PlusIcon, StarIcon, XIcon } from './icons';
+import QrScanner from './QrScanner';
 
 function persistContacts(contacts: Contact[]) {
   try { localStorage.setItem(STORAGE_KEYS.contacts, JSON.stringify(contacts)); } catch { /* ignore */ }
@@ -71,6 +72,7 @@ const SkeletonCard: Component = () => (
 
 const ContactList: Component<ContactListProps> = (props) => {
   const [showAddModal, setShowAddModal] = createSignal(false);
+  const [showScanner, setShowScanner] = createSignal(false);
   const [addInput, setAddInput] = createSignal('');
   const [addError, setAddError] = createSignal('');
   const [favoritePubkeys, setFavoritePubkeys] = createSignal<string[]>([]);
@@ -197,6 +199,12 @@ const ContactList: Component<ContactListProps> = (props) => {
       );
       persistContacts(store.contacts);
     });
+  };
+
+  const handleScan = (value: string) => {
+    setShowScanner(false);
+    setAddInput(value);
+    setAddError('');
   };
 
   const handleToggleFavorite = (contact: Contact) => {
@@ -363,6 +371,11 @@ const ContactList: Component<ContactListProps> = (props) => {
         </Show>
       </div>
 
+      {/* QR scanner fullscreen */}
+      <Show when={showScanner()}>
+        <QrScanner onScan={handleScan} onClose={() => setShowScanner(false)} />
+      </Show>
+
       {/* Add contact modal */}
       <Show when={showAddModal()}>
         <div
@@ -379,22 +392,41 @@ const ContactList: Component<ContactListProps> = (props) => {
               Add Contact
             </h2>
 
-            <input
-              type="text"
-              placeholder="npub1... or hex pubkey"
-              value={addInput()}
-              onInput={(e) => {
-                setAddInput((e.target as HTMLInputElement).value);
-                setAddError('');
-              }}
-              class="w-full px-4 py-3 rounded-xl text-sm outline-none mb-2"
-              style={{
-                background: 'var(--color-surface-2)',
-                border: '1px solid var(--color-border)',
-                color: 'var(--color-text)',
-              }}
-              autofocus
-            />
+            <div class="flex gap-2 mb-2">
+              <input
+                type="text"
+                placeholder="npub1... or hex pubkey"
+                value={addInput()}
+                onInput={(e) => {
+                  setAddInput((e.target as HTMLInputElement).value);
+                  setAddError('');
+                }}
+                class="flex-1 px-4 py-3 rounded-xl text-sm outline-none"
+                style={{
+                  background: 'var(--color-surface-2)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-text)',
+                }}
+                autofocus
+              />
+              <button
+                onClick={() => setShowScanner(true)}
+                class="flex items-center justify-center w-12 rounded-xl flex-shrink-0"
+                style={{
+                  background: 'var(--color-surface-2)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-text-muted)',
+                  cursor: 'pointer',
+                }}
+                title="Scan QR code"
+                aria-label="Scan QR code"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>
+                  <path d="M14 14h2v2h-2zM18 14h3M14 18h2M18 18h3v3M14 21h2"/>
+                </svg>
+              </button>
+            </div>
 
             <Show when={addError()}>
               <p class="text-xs mb-3" style={{ color: 'var(--color-danger)' }}>
