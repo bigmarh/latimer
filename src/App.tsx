@@ -64,6 +64,33 @@ const App: Component = () => {
     }
   };
 
+  // Called when WebRTC connection drops without a clean CALL_END signal
+  const handleDroppedCall = (failed: boolean) => {
+    const contact = store.activeCallContact;
+    const callId = store.activeCallId;
+    const duration = store.callDuration;
+    const callType = store.activeCallType;
+    if (contact && callId && store.callState === 'connected') {
+      logCall({
+        id: callId,
+        contact,
+        direction: 'outgoing',
+        status: 'completed',
+        callType,
+        startedAt: Date.now() - duration * 1000,
+        duration,
+      });
+    }
+    stopDurationTimer();
+    webrtcService.cleanup();
+    batch(() => {
+      setStore({ callState: failed ? 'failed' : 'ended', callDuration: 0 });
+      setLocalStream(null);
+      setRemoteStream(new MediaStream());
+    });
+    setTimeout(() => setStore({ callState: 'idle', activeCallContact: null, activeCallId: null }), 2_500);
+  };
+
   // Watch call state changes for timer
   createEffect(() => {
     if (store.callState === 'connected') {
@@ -172,7 +199,7 @@ const App: Component = () => {
       if (state === 'connected') {
         setStore('callState', 'connected');
       } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
-        setStore('callState', state === 'failed' ? 'failed' : 'ended');
+        handleDroppedCall(state === 'failed');
       }
     };
 

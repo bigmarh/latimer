@@ -48,8 +48,7 @@ const ActiveCall: Component<ActiveCallProps> = (props) => {
     || props.callState === 'failed';
 
   const playMedia = async (element: HTMLMediaElement | undefined, label: string) => {
-    if (!element) return;
-
+    if (!element || !element.paused) return;
     try {
       await element.play();
     } catch (err) {

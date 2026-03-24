@@ -78,8 +78,8 @@ export function buildConstraints(videoEnabled: boolean): MediaStreamConstraints 
   if (!videoEnabled) return { audio, video: false };
 
   const video: MediaTrackConstraints = camId
-    ? { deviceId: { exact: camId }, width: { ideal: 1280 }, height: { ideal: 720 } }
-    : { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' };
+    ? { deviceId: { exact: camId }, width: { ideal: 640 }, height: { ideal: 480 } }
+    : { width: { ideal: 640 }, height: { ideal: 480 } };
 
   return { audio, video };
 }

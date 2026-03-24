@@ -135,11 +135,10 @@ class WebRTCService {
     if (!this.pc || !this.localStream) return;
     this.facingMode = this.facingMode === 'user' ? 'environment' : 'user';
     const newStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { exact: this.facingMode }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      video: { facingMode: { exact: this.facingMode }, width: { ideal: 640 }, height: { ideal: 480 } },
     }).catch(() =>
-      // Some devices don't support 'exact' — fall back to ideal
       navigator.mediaDevices.getUserMedia({
-        video: { facingMode: this.facingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: { facingMode: this.facingMode, width: { ideal: 640 }, height: { ideal: 480 } },
       })
     );
 
@@ -187,6 +186,7 @@ class WebRTCService {
     }
     this.remoteStream = new MediaStream();
     this.pendingCandidates = [];
+    this.facingMode = 'user';
   }
 
   getLocalStream(): MediaStream | null {
