@@ -203,7 +203,7 @@ const ContactList: Component<ContactListProps> = (props) => {
 
   const handleScan = (value: string) => {
     setShowScanner(false);
-    setAddInput(value);
+    setAddInput(value.replace(/^nostr:/i, ''));
     setAddError('');
   };
 
