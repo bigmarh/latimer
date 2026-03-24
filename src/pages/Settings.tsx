@@ -11,6 +11,7 @@ import {
   selectCamera, selectMic, enumerateDevices,
 } from '../services/devices';
 import { ChevronLeftIcon, CopyIcon, QrCodeIcon } from '../components/icons';
+import { logoutNostrPass } from '../components/Login';
 
 function getPubkeyGradient(pubkey: string): string {
   const hex = pubkey.replace(/[^0-9a-fA-F]/g, '');
@@ -98,6 +99,9 @@ const Settings: Component = () => {
   };
 
   const handleLogout = async () => {
+    // Log out of NostrPass (clears its session so auto-login doesn't fire)
+    await logoutNostrPass();
+
     // Clear storage
     localStorage.removeItem(STORAGE_KEYS.pubkey);
     localStorage.removeItem(STORAGE_KEYS.relays);

@@ -39,6 +39,13 @@ declare global {
 // Module-level singleton
 let embassyInstance: EmbassyInstance | null = null;
 
+export async function logoutNostrPass(): Promise<void> {
+  if (embassyInstance) {
+    try { await embassyInstance.logout(); } catch { /* ignore */ }
+    embassyInstance = null;
+  }
+}
+
 async function getOrInitEmbassy(relays: string[]): Promise<EmbassyInstance> {
   if (embassyInstance) return embassyInstance;
 
@@ -138,22 +145,15 @@ const Login: Component<LoginProps> = (props) => {
   };
 
   onMount(async () => {
-    // Capture the real extension BEFORE NostrPass can override window.nostr
-    const capturedBeforeInit = window.nostr ?? null;
-    if (capturedBeforeInit) {
-      realExtension = capturedBeforeInit;
+    // __earlyNostr is captured by an inline script in index.html BEFORE the NostrPass
+    // CDN script loads, so it only contains a real browser extension (nos2x, Alby) or null.
+    const earlyNostr = (window as Window & { __earlyNostr?: typeof window.nostr }).__earlyNostr ?? null;
+    if (earlyNostr) {
+      realExtension = earlyNostr;
       setHasExtension(true);
     }
     try {
       const embassy = await getOrInitEmbassy(relays);
-
-      // After NostrPass init (overrideExistingProvider: true), window.nostr is now
-      // the NostrPass provider. If our captured reference is the same object,
-      // NostrPass was already installed before we ran — it's not a real extension.
-      if (realExtension !== null && realExtension === window.nostr) {
-        realExtension = null;
-        setHasExtension(false);
-      }
 
       if (containerRef) {
         embassy.createNostrPassLiteButton({

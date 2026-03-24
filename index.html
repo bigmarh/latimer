@@ -3,7 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.nostrpass.com 'wasm-unsafe-eval' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' wss: https:; img-src 'self' data: blob: https:; font-src 'self' data:; frame-src https://cdn.nostrpass.com; frame-ancestors 'none';" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.nostrpass.com 'wasm-unsafe-eval' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' wss: https:; img-src 'self' data: blob: https:; font-src 'self' data:; frame-src https://cdn.nostrpass.com;" />
+    <!-- Capture window.nostr BEFORE any page scripts (CDN etc.) so we can detect real browser extensions -->
+    <script>window.__earlyNostr = window.nostr || null;</script>
     <script src="https://cdn.nostrpass.com/lite-embassy@0.1.2.js"></script>
 
     <!-- PWA & theme -->
