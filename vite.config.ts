@@ -6,6 +6,7 @@ import basicSsl from "@vitejs/plugin-basic-ssl";
 import { VitePWA } from "vite-plugin-pwa";
 
 const uuidShimEntry = fileURLToPath(new URL("./src/shims/uuid.ts", import.meta.url));
+const lruCacheShimEntry = fileURLToPath(new URL("./src/shims/lru-cache.ts", import.meta.url));
 
 export default defineConfig({
   plugins: [
@@ -43,6 +44,7 @@ export default defineConfig({
     conditions: ["browser", "import", "module", "default"],
     alias: {
       uuid: uuidShimEntry,
+      "lru-cache": lruCacheShimEntry,
     },
   },
   optimizeDeps: {
