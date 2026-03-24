@@ -1,9 +1,3 @@
 name = "latimer"
 compatibility_date = "2024-01-01"
-
-[env.production]
-name = "latimer"
-
-[[env.production.routes]]
-pattern = "latimer.app/*"
-zone_name = "latimer.app"
+pages_build_output_dir = "dist"
