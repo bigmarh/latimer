@@ -106,11 +106,13 @@ const ContactCard: Component<ContactCardProps> = (props) => {
 
   return (
     <div
-      class="card flex overflow-hidden"
+      class="card flex w-full overflow-hidden"
       style={{
         transition: 'transform 0.12s, box-shadow 0.12s',
         position: 'relative',
         'min-height': '104px',
+        width: '100%',
+        'align-self': 'stretch',
         background: 'linear-gradient(180deg, rgba(23,24,35,0.98) 0%, rgba(16,18,28,0.98) 100%)',
         'box-shadow': '0 10px 32px rgba(0,0,0,0.2)',
       }}

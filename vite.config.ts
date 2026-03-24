@@ -22,9 +22,31 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest}'],
         runtimeCaching: [
           {
+            urlPattern: ({ request, url }) =>
+              request.destination === 'image' && (url.protocol === 'https:' || url.protocol === 'http:'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'remote-images',
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+              expiration: {
+                maxEntries: 400,
+                maxAgeSeconds: 60 * 60 * 24 * 30,
+                purgeOnQuotaError: true,
+              },
+            },
+          },
+          {
             urlPattern: /^https:\/\/.+/,
             handler: 'NetworkFirst',
-            options: { cacheName: 'external', networkTimeoutSeconds: 10 },
+            options: {
+              cacheName: 'external',
+              networkTimeoutSeconds: 10,
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
           },
         ],
       },

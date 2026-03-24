@@ -7,7 +7,7 @@ import ContactCard from './ContactCard';
 import { loadProfile, publishFollowList } from '../services/nostr';
 import { signalingService } from '../services/signaling';
 import { STORAGE_KEYS } from '../constants';
-import { SearchIcon, PlusIcon, XIcon } from './icons';
+import { SearchIcon, PlusIcon, StarIcon, XIcon } from './icons';
 
 function persistContacts(contacts: Contact[]) {
   try { localStorage.setItem(STORAGE_KEYS.contacts, JSON.stringify(contacts)); } catch { /* ignore */ }
@@ -43,6 +43,8 @@ interface ContactListProps {
   onCall: (contact: Contact, type: 'audio' | 'video') => void;
 }
 
+type ContactView = 'all' | 'favorites';
+
 // Loading skeleton card
 const SkeletonCard: Component = () => (
   <div
@@ -72,6 +74,7 @@ const ContactList: Component<ContactListProps> = (props) => {
   const [addInput, setAddInput] = createSignal('');
   const [addError, setAddError] = createSignal('');
   const [favoritePubkeys, setFavoritePubkeys] = createSignal<string[]>([]);
+  const [activeView, setActiveView] = createSignal<ContactView>('all');
 
   createEffect(() => {
     if (!store.pubkey) {
@@ -81,23 +84,60 @@ const ContactList: Component<ContactListProps> = (props) => {
     setFavoritePubkeys(readFavoriteContacts(store.pubkey));
   });
 
-  const filteredContacts = () => {
+  const visibleContacts = () => {
     const q = store.searchQuery.toLowerCase().trim();
-    const filtered = !q ? store.contacts : store.contacts.filter((c) => {
+    const favoriteSet = new Set(favoritePubkeys());
+    const favoriteOrder = new Map(favoritePubkeys().map((pubkey, index) => [pubkey, index]));
+    const interactionMap = new Map<string, number>();
+
+    for (const record of store.recentCalls) {
+      const previous = interactionMap.get(record.contact.pubkey) ?? 0;
+      if (record.startedAt > previous) {
+        interactionMap.set(record.contact.pubkey, record.startedAt);
+      }
+    }
+
+    let filtered = !q ? store.contacts : store.contacts.filter((c) => {
       const name = (c.displayName || c.name || '').toLowerCase();
       return name.includes(q) || c.pubkey.toLowerCase().includes(q);
     });
 
-    const favoriteSet = new Set(favoritePubkeys());
+    if (activeView() === 'favorites') {
+      filtered = filtered.filter((contact) => favoriteSet.has(contact.pubkey));
+    }
+
     return filtered
       .map((contact, index) => ({ contact, index }))
       .sort((a, b) => {
-        const aFavorite = favoriteSet.has(a.contact.pubkey);
-        const bFavorite = favoriteSet.has(b.contact.pubkey);
-        if (aFavorite !== bFavorite) return aFavorite ? -1 : 1;
+        const aInteraction = interactionMap.get(a.contact.pubkey) ?? 0;
+        const bInteraction = interactionMap.get(b.contact.pubkey) ?? 0;
+        if (aInteraction !== bInteraction) return bInteraction - aInteraction;
+
+        if (activeView() === 'favorites') {
+          const aFavoriteRank = favoriteOrder.get(a.contact.pubkey) ?? Number.MAX_SAFE_INTEGER;
+          const bFavoriteRank = favoriteOrder.get(b.contact.pubkey) ?? Number.MAX_SAFE_INTEGER;
+          if (aFavoriteRank !== bFavoriteRank) return aFavoriteRank - bFavoriteRank;
+        }
+
         return a.index - b.index;
       })
       .map(({ contact }) => contact);
+  };
+
+  const favoriteCount = () => store.contacts.filter((contact) => favoritePubkeys().includes(contact.pubkey)).length;
+
+  const emptyStateLabel = () => {
+    if (store.searchQuery) {
+      return activeView() === 'favorites'
+        ? `No favorites match "${store.searchQuery}"`
+        : `No contacts match "${store.searchQuery}"`;
+    }
+
+    if (activeView() === 'favorites') {
+      return 'No favorites yet. Star contacts to pin them here.';
+    }
+
+    return 'No contacts yet.';
   };
 
   const handleSearch = (e: InputEvent) => {
@@ -172,7 +212,7 @@ const ContactList: Component<ContactListProps> = (props) => {
 
   return (
     <div class="flex flex-col h-full">
-      {/* Search + Add row */}
+      {/* Search + View + Add row */}
       <div class="flex gap-2 px-4 py-3">
         <div
           class="flex-1 flex items-center gap-2 rounded-xl px-3"
@@ -201,6 +241,43 @@ const ContactList: Component<ContactListProps> = (props) => {
           </Show>
         </div>
 
+        <div
+          class="flex items-center rounded-xl p-1 flex-shrink-0"
+          style={{
+            background: 'var(--color-surface-2)',
+            border: '1px solid var(--color-border)',
+          }}
+        >
+          <button
+            class="h-8 px-3 rounded-lg text-xs font-semibold"
+            style={{
+              background: activeView() === 'all' ? 'rgba(255,255,255,0.08)' : 'transparent',
+              color: activeView() === 'all' ? 'var(--color-text)' : 'var(--color-text-dim)',
+              border: 'none',
+              cursor: 'pointer',
+            }}
+            onClick={() => setActiveView('all')}
+            aria-pressed={activeView() === 'all'}
+          >
+            All
+          </button>
+          <button
+            class="flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold"
+            style={{
+              background: activeView() === 'favorites' ? 'rgba(250, 204, 21, 0.16)' : 'transparent',
+              color: activeView() === 'favorites' ? '#facc15' : 'var(--color-text-dim)',
+              border: 'none',
+              cursor: 'pointer',
+            }}
+            onClick={() => setActiveView('favorites')}
+            aria-pressed={activeView() === 'favorites'}
+            title="Show favorites"
+          >
+            <StarIcon size={12} style={{ fill: activeView() === 'favorites' ? 'currentColor' : 'transparent' }} />
+            <span>Favs</span>
+          </button>
+        </div>
+
         <button
           onClick={() => setShowAddModal(true)}
           class="flex items-center justify-center w-10 h-10 rounded-xl"
@@ -219,10 +296,23 @@ const ContactList: Component<ContactListProps> = (props) => {
 
       {/* Contact list */}
       <div class="scroll-area flex-1 px-4 pb-4">
+        <Show when={activeView() === 'favorites' || store.recentCalls.length > 0}>
+          <div class="flex items-center justify-between px-1 pb-3">
+            <span class="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-text-muted)' }}>
+              {activeView() === 'favorites' ? 'Favorite Contacts' : 'Recent First'}
+            </span>
+            <Show when={activeView() === 'favorites' && favoriteCount() > 0}>
+              <span class="text-[11px]" style={{ color: 'rgba(250, 204, 21, 0.78)' }}>
+                {favoriteCount()} starred
+              </span>
+            </Show>
+          </div>
+        </Show>
+
         <Show
           when={store.contactsLoaded}
           fallback={
-            <div class="flex flex-col gap-3">
+            <div class="flex flex-col gap-3 items-stretch">
               {Array.from({ length: 8 }).map(() => <SkeletonCard />)}
             </div>
           }
@@ -246,17 +336,17 @@ const ContactList: Component<ContactListProps> = (props) => {
             }
           >
             <Show
-              when={filteredContacts().length > 0}
+              when={visibleContacts().length > 0}
               fallback={
                 <div class="flex flex-col items-center justify-center py-12">
                   <p class="text-sm" style={{ color: 'var(--color-text-dim)' }}>
-                    No contacts match "{store.searchQuery}"
+                    {emptyStateLabel()}
                   </p>
                 </div>
               }
             >
-              <div class="flex flex-col gap-3">
-                <For each={filteredContacts()}>
+              <div class="flex flex-col gap-3 items-stretch">
+                <For each={visibleContacts()}>
                   {(contact) => (
                     <ContactCard
                       contact={contact}
