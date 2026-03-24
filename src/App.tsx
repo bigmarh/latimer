@@ -696,23 +696,21 @@ const App: Component = () => {
           </Show>
         </Show>
 
-        {/* Normal UI when idle */}
-        <Show when={store.callState === 'idle'}>
-          <Switch>
-            <Match when={store.view === 'home'}>
-              <Home />
-            </Match>
-            <Match when={store.view === 'settings'}>
-              <Settings />
-            </Match>
-            <Match when={store.view === 'inbox'}>
-              <Inbox />
-            </Match>
-            <Match when={store.view === 'incognitoLobby'}>
-              <IncognitoLobby onCancel={() => setStore({ loggedIn: false, incognito: false, view: 'home' })} />
-            </Match>
-          </Switch>
-        </Show>
+        {/* Normal UI — all pages stay mounted, CSS show/hide prevents remount flicker */}
+        <div style={{ display: store.callState === 'idle' ? 'contents' : 'none' }}>
+          <div style={{ display: store.view === 'home' ? 'contents' : 'none' }}>
+            <Home />
+          </div>
+          <div style={{ display: store.view === 'settings' ? 'contents' : 'none' }}>
+            <Settings />
+          </div>
+          <div style={{ display: store.view === 'inbox' ? 'contents' : 'none' }}>
+            <Inbox />
+          </div>
+          <Show when={store.view === 'incognitoLobby'}>
+            <IncognitoLobby onCancel={() => setStore({ loggedIn: false, incognito: false, view: 'home' })} />
+          </Show>
+        </div>
 
         {/* View profile overlay */}
         <Show when={store.viewProfilePubkey !== null}>
