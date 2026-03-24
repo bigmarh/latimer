@@ -1,5 +1,5 @@
 import type { Component } from 'solid-js';
-import { For, Show, createSignal } from 'solid-js';
+import { For, Show, createEffect, createSignal } from 'solid-js';
 import { nip19 } from 'nostr-tools';
 import { store, setStore } from '../store';
 import type { Contact } from '../types';
@@ -13,6 +13,31 @@ function persistContacts(contacts: Contact[]) {
   try { localStorage.setItem(STORAGE_KEYS.contacts, JSON.stringify(contacts)); } catch { /* ignore */ }
 }
 
+function readFavoriteContacts(ownerPubkey: string): string[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.favoriteContacts);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const favorites = parsed[ownerPubkey];
+    return Array.isArray(favorites)
+      ? favorites.filter((value): value is string => typeof value === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistFavoriteContacts(ownerPubkey: string, favorites: string[]) {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.favoriteContacts);
+    const parsed = raw ? JSON.parse(raw) as Record<string, unknown> : {};
+    parsed[ownerPubkey] = favorites;
+    localStorage.setItem(STORAGE_KEYS.favoriteContacts, JSON.stringify(parsed));
+  } catch {
+    // ignore quota and parse issues
+  }
+}
+
 interface ContactListProps {
   onSendLink: (contact: Contact) => Promise<boolean>;
   onCall: (contact: Contact, type: 'audio' | 'video') => void;
@@ -21,21 +46,23 @@ interface ContactListProps {
 // Loading skeleton card
 const SkeletonCard: Component = () => (
   <div
-    class="card flex flex-col items-center p-3 gap-2"
-    style={{ animation: 'pulse 1.5s ease-in-out infinite' }}
+    class="card flex overflow-hidden"
+    style={{ animation: 'pulse 1.5s ease-in-out infinite', 'min-height': '104px' }}
   >
     <div
-      class="w-16 h-16 rounded-full"
+      class="w-[96px] min-h-full flex-shrink-0"
       style={{ background: 'var(--color-surface-2)' }}
     />
     <div
-      class="w-16 h-3 rounded-full"
-      style={{ background: 'var(--color-surface-2)' }}
-    />
-    <div class="flex items-center justify-between w-full mt-2 px-1">
-      <div class="w-10 h-10 rounded-full" style={{ background: 'var(--color-surface-2)' }} />
-      <div class="w-10 h-10 rounded-full" style={{ background: 'var(--color-surface-2)' }} />
-      <div class="w-10 h-10 rounded-full" style={{ background: 'var(--color-surface-2)' }} />
+      class="flex-1 px-4 py-4 flex flex-col justify-center gap-3"
+      style={{ background: 'transparent' }}
+    >
+      <div class="w-36 h-4 rounded-full" style={{ background: 'var(--color-surface-2)' }} />
+      <div class="flex items-center gap-2">
+        <div class="h-9 rounded-full" style={{ background: 'var(--color-surface-2)', width: '72px' }} />
+        <div class="h-9 rounded-full" style={{ background: 'var(--color-surface-2)', width: '72px' }} />
+        <div class="h-9 rounded-full" style={{ background: 'var(--color-surface-2)', width: '84px' }} />
+      </div>
     </div>
   </div>
 );
@@ -44,14 +71,33 @@ const ContactList: Component<ContactListProps> = (props) => {
   const [showAddModal, setShowAddModal] = createSignal(false);
   const [addInput, setAddInput] = createSignal('');
   const [addError, setAddError] = createSignal('');
+  const [favoritePubkeys, setFavoritePubkeys] = createSignal<string[]>([]);
+
+  createEffect(() => {
+    if (!store.pubkey) {
+      setFavoritePubkeys([]);
+      return;
+    }
+    setFavoritePubkeys(readFavoriteContacts(store.pubkey));
+  });
 
   const filteredContacts = () => {
     const q = store.searchQuery.toLowerCase().trim();
-    if (!q) return store.contacts;
-    return store.contacts.filter((c) => {
+    const filtered = !q ? store.contacts : store.contacts.filter((c) => {
       const name = (c.displayName || c.name || '').toLowerCase();
       return name.includes(q) || c.pubkey.toLowerCase().includes(q);
     });
+
+    const favoriteSet = new Set(favoritePubkeys());
+    return filtered
+      .map((contact, index) => ({ contact, index }))
+      .sort((a, b) => {
+        const aFavorite = favoriteSet.has(a.contact.pubkey);
+        const bFavorite = favoriteSet.has(b.contact.pubkey);
+        if (aFavorite !== bFavorite) return aFavorite ? -1 : 1;
+        return a.index - b.index;
+      })
+      .map(({ contact }) => contact);
   };
 
   const handleSearch = (e: InputEvent) => {
@@ -113,6 +159,17 @@ const ContactList: Component<ContactListProps> = (props) => {
     });
   };
 
+  const handleToggleFavorite = (contact: Contact) => {
+    const next = favoritePubkeys().includes(contact.pubkey)
+      ? favoritePubkeys().filter((pubkey) => pubkey !== contact.pubkey)
+      : [contact.pubkey, ...favoritePubkeys()];
+
+    setFavoritePubkeys(next);
+    if (store.pubkey) {
+      persistFavoriteContacts(store.pubkey, next);
+    }
+  };
+
   return (
     <div class="flex flex-col h-full">
       {/* Search + Add row */}
@@ -160,12 +217,12 @@ const ContactList: Component<ContactListProps> = (props) => {
         </button>
       </div>
 
-      {/* Contact grid */}
+      {/* Contact list */}
       <div class="scroll-area flex-1 px-4 pb-4">
         <Show
           when={store.contactsLoaded}
           fallback={
-            <div class="grid grid-cols-2 gap-3">
+            <div class="flex flex-col gap-3">
               {Array.from({ length: 8 }).map(() => <SkeletonCard />)}
             </div>
           }
@@ -198,13 +255,15 @@ const ContactList: Component<ContactListProps> = (props) => {
                 </div>
               }
             >
-              <div class="grid grid-cols-2 gap-3">
+              <div class="flex flex-col gap-3">
                 <For each={filteredContacts()}>
                   {(contact) => (
                     <ContactCard
                       contact={contact}
+                      starred={favoritePubkeys().includes(contact.pubkey)}
                       onSendLink={props.onSendLink}
                       onCall={props.onCall}
+                      onToggleStar={handleToggleFavorite}
                     />
                   )}
                 </For>

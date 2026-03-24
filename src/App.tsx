@@ -406,8 +406,6 @@ const App: Component = () => {
     // Incognito = has a custom signer AND skipContactLoad (ephemeral key, no persistent identity)
     const isIncognito = !!opts?.signer && !!opts?.skipContactLoad && opts?.view === 'incognitoLobby';
 
-    if (!isIncognito) setLoading(true, 'Loading contacts…');
-
     // Restore cached contacts + call log (skip for incognito — no persistent identity)
     if (!isIncognito) {
       try {
@@ -432,6 +430,10 @@ const App: Component = () => {
 
     await initSignaling(relays, opts?.signer, opts?.skHex);
 
+    // Dismiss the splash/loading overlay as soon as signaling is ready — ContactList
+    // skeleton cards handle the contacts-loading state without blocking the whole app.
+    setLoading(false);
+
     // Set up WebRTC stream callbacks
     webrtcService.onLocalStream = (stream) => {
       setLocalStream(stream);
@@ -441,15 +443,11 @@ const App: Component = () => {
     };
 
     if (!isIncognito && !opts?.skipContactLoad) {
-      // If we have cached contacts, dismiss the overlay immediately — relay fetch runs in background
-      const hasCached = !!localStorage.getItem(STORAGE_KEYS.contacts);
-      if (hasCached) setLoading(false);
-
-      // Fetch own profile and contacts in parallel
+      // Fetch own profile and contacts in background
       void loadProfile(pubkey, relays).then((profile) => {
         setStore('ownProfile', profile);
       });
-      loadContacts(pubkey, relays)
+      void loadContacts(pubkey, relays)
         .then((contacts) => {
           if (contacts.length > 0) {
             setStore({ contacts, contactsLoaded: true });
@@ -461,10 +459,7 @@ const App: Component = () => {
         .catch((err) => {
           console.error('[App] Failed to load contacts:', err);
           setStore('contactsLoaded', true);
-        })
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
+        });
     }
   };
 

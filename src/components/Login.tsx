@@ -65,7 +65,9 @@ async function getOrInitEmbassy(relays: string[]): Promise<EmbassyInstance> {
     relays,
     storagePrefix: 'latimer-nostrpass',
     vaultUrl: 'https://cdn.nostrpass.com/lite-vault/index.html',
-    installProviderOnInit: true,
+    // Do not claim window.nostr on the login screen. If a NIP-07 extension is
+    // present, eager provider install can break its request/response flow.
+    installProviderOnInit: false,
     overrideExistingProvider: true,
     permissionDefaults: {
       getPublicKey: 'ALLOW',
@@ -97,9 +99,16 @@ const Login: Component<LoginProps> = (props) => {
   // Only auto-login from status if returning user (loginMethod saved) or user explicitly
   // clicked the NostrPass button — prevents auto-relogin after logout when vault session persists
   let nostrPassClicked = false;
+  let statusListenerAttached = false;
+  let statusHandler: ((event: Event) => void) | null = null;
+  let buttonObserver: MutationObserver | null = null;
+  let nostrPassButtonCreated = false;
   const [hasExtension, setHasExtension] = createSignal(false);
   const [extLoading, setExtLoading] = createSignal(false);
   const [extError, setExtError] = createSignal('');
+  const [nostrPassLoading, setNostrPassLoading] = createSignal(false);
+  const [nostrPassError, setNostrPassError] = createSignal('');
+  const [showNostrPassButton, setShowNostrPassButton] = createSignal(false);
   const [showMore, setShowMore] = createSignal(false);
   const [nsec, setNsec] = createSignal('');
   const [nsecError, setNsecError] = createSignal('');
@@ -158,10 +167,124 @@ const Login: Component<LoginProps> = (props) => {
     }
   };
 
+  const styleNostrPassButton = () => {
+    const btn = (containerRef?.querySelector('button') ?? containerRef?.firstElementChild) as HTMLElement | null;
+    if (!btn) return;
+    btn.style.width = '100%';
+    btn.style.minHeight = '48px';
+    btn.style.borderRadius = '0.75rem';
+    btn.style.fontSize = '0.875rem';
+    btn.style.fontWeight = '600';
+    btn.style.cursor = 'pointer';
+    if (btn.textContent?.trim() === 'Sign in with NostrPass') {
+      btn.style.backgroundColor = '#16a34a';
+      btn.style.color = '#fff';
+      btn.style.border = '1px solid #15803d';
+    } else {
+      btn.style.backgroundColor = '';
+      btn.style.color = '';
+      btn.style.border = '';
+    }
+  };
+
+  const ensureNostrPassButton = (embassy: EmbassyInstance) => {
+    if (!containerRef || nostrPassButtonCreated) return;
+
+    embassy.createNostrPassLiteButton({
+      appendTo: containerRef,
+      labelSignedOut: 'Sign in with NostrPass',
+      labelLocked: 'Unlock NostrPass',
+      labelSignedIn: 'Connected',
+    });
+    nostrPassButtonCreated = true;
+    setShowNostrPassButton(true);
+
+    setTimeout(styleNostrPassButton, 50);
+    if (!buttonObserver) {
+      // Watch for childList/characterData only — NOT attributes, which would create an
+      // infinite loop (styleNostrPassButton sets inline styles → attribute mutation → loop)
+      buttonObserver = new MutationObserver(styleNostrPassButton);
+      buttonObserver.observe(containerRef, { childList: true, subtree: true, characterData: true });
+    }
+  };
+
+  const attachNostrPassStatusListener = (embassy: EmbassyInstance) => {
+    if (statusListenerAttached) return;
+
+    statusHandler = async (event: Event) => {
+      const status = (event as CustomEvent<NostrPassLiteStatus>).detail;
+      const savedLoginMethod = localStorage.getItem(STORAGE_KEYS.loginMethod);
+      console.log('[Login] nostrpass-lite:status —', status.kind, '| authenticated:', status.auth?.isAuthenticated, '| locked:', status.auth?.isLocked, '| hasLoggedIn:', hasLoggedIn, '| nostrPassClicked:', nostrPassClicked, '| loginMethod:', savedLoginMethod);
+      const allowAutoLogin = savedLoginMethod === 'nostrpass' || nostrPassClicked;
+      if (!hasLoggedIn && allowAutoLogin && status.kind === 'ready' && status.auth?.isAuthenticated && !status.auth?.isLocked) {
+        hasLoggedIn = true;
+        console.log('[Login] NostrPass ready+authenticated — installing provider…');
+        try {
+          embassy.installNostrProvider({ overrideExisting: true });
+          console.log('[Login] Provider installed. window.nostr now:', window.nostr ? 'present' : 'absent');
+
+          let pubkey = status.auth.publicKey;
+          console.log('[Login] pubkey from status.auth:', pubkey ? `${pubkey.slice(0, 8)}…` : 'none — will call getPublicKey');
+          if (!pubkey) {
+            const nostr = window.nostr;
+            if (!nostr) {
+              console.warn('[Login] window.nostr not available after installNostrProvider');
+              return;
+            }
+            pubkey = await nostr.getPublicKey();
+            console.log('[Login] pubkey from getPublicKey:', pubkey ? `${pubkey.slice(0, 8)}…` : 'FAILED');
+          }
+          localStorage.setItem(STORAGE_KEYS.pubkey, pubkey);
+          localStorage.setItem(STORAGE_KEYS.relays, JSON.stringify(relays));
+          localStorage.setItem(STORAGE_KEYS.loginMethod, 'nostrpass');
+          console.log('[Login] Calling onLogin with pubkey:', pubkey.slice(0, 8), '…');
+          props.onLogin(pubkey, relays);
+        } catch (err) {
+          console.error('[Login] Failed to get public key:', err);
+        }
+      }
+    };
+
+    window.addEventListener('nostrpass-lite:status', statusHandler);
+    statusListenerAttached = true;
+    console.log('[Login] Status listener attached');
+  };
+
+  const initNostrPass = async () => {
+    setNostrPassError('');
+    if (nostrPassLoading()) return;
+
+    try {
+      setNostrPassLoading(true);
+      console.log('[Login] Initializing NostrPass embassy…');
+      const embassy = await getOrInitEmbassy(relays);
+      console.log('[Login] Embassy initialized. window.nostr after init:', window.nostr ? 'present' : 'absent');
+      attachNostrPassStatusListener(embassy);
+      ensureNostrPassButton(embassy);
+      return embassy;
+    } catch (err) {
+      console.error('[Login] Failed to initialize NostrPass:', err);
+      setNostrPassError('Failed to load NostrPass');
+      return null;
+    } finally {
+      setNostrPassLoading(false);
+    }
+  };
+
+  const handleNostrPassClick = async () => {
+    nostrPassClicked = true;
+    const embassy = await initNostrPass();
+    if (!embassy || !containerRef) return;
+    const btn = (containerRef.querySelector('button') ?? containerRef.firstElementChild) as HTMLElement | null;
+    btn?.click();
+  };
+
   onMount(async () => {
     // Wait for window.load so late-injecting extensions (Alby, etc.) have finished
     // injecting window.nostr. NostrPass isn't installed yet at this point.
-    await new Promise<void>(resolve => window.addEventListener('load', () => resolve(), { once: true }));
+    if (document.readyState !== 'complete') {
+      await new Promise<void>(resolve => window.addEventListener('load', () => resolve(), { once: true }));
+    }
     const earlyNostr = (window as Window & { __earlyNostr?: typeof window.nostr }).__earlyNostr
       ?? window.nostr
       ?? null;
@@ -171,79 +294,19 @@ const Login: Component<LoginProps> = (props) => {
       setHasExtension(true);
       console.log('[Login] Real extension detected (nos2x/Alby)');
     }
-    try {
-      console.log('[Login] Initializing NostrPass embassy…');
-      const embassy = await getOrInitEmbassy(relays);
-      console.log('[Login] Embassy initialized. window.nostr after init:', window.nostr ? 'present' : 'absent');
 
-      if (containerRef) {
-        embassy.createNostrPassLiteButton({
-          appendTo: containerRef,
-          labelSignedOut: 'Sign in with NostrPass',
-          labelLocked: 'Unlock NostrPass',
-          labelSignedIn: 'Connected',
-        });
+    const savedLoginMethod = localStorage.getItem(STORAGE_KEYS.loginMethod);
+    if (savedLoginMethod === 'nostrpass' || !earlyNostr) {
+      void initNostrPass();
+    } else {
+      console.log('[Login] Extension present — deferring NostrPass init until explicit click');
+    }
+  });
 
-        // Style the injected button directly — CSS can't reach it (inline styles / shadow DOM)
-        const styleBtn = () => {
-          const btn = containerRef.querySelector('button') ?? containerRef.firstElementChild as HTMLElement | null;
-          if (!btn) return;
-          (btn as HTMLElement).style.width = '100%';
-          (btn as HTMLElement).style.minHeight = '48px';
-          (btn as HTMLElement).style.borderRadius = '0.75rem';
-          (btn as HTMLElement).style.fontSize = '0.875rem';
-          (btn as HTMLElement).style.fontWeight = '600';
-          (btn as HTMLElement).style.backgroundColor = '#16a34a';
-          (btn as HTMLElement).style.color = '#fff';
-          (btn as HTMLElement).style.border = 'none';
-          (btn as HTMLElement).style.cursor = 'pointer';
-        };
-        setTimeout(styleBtn, 50);
-        const observer = new MutationObserver(styleBtn);
-        observer.observe(containerRef, { childList: true, subtree: true, attributes: true });
-        onCleanup(() => observer.disconnect());
-      }
-
-      const handleStatus = async (event: Event) => {
-        const status = (event as CustomEvent<NostrPassLiteStatus>).detail;
-        const savedLoginMethod = localStorage.getItem(STORAGE_KEYS.loginMethod);
-        console.log('[Login] nostrpass-lite:status —', status.kind, '| authenticated:', status.auth?.isAuthenticated, '| locked:', status.auth?.isLocked, '| hasLoggedIn:', hasLoggedIn, '| nostrPassClicked:', nostrPassClicked, '| loginMethod:', savedLoginMethod);
-        const allowAutoLogin = savedLoginMethod === 'nostrpass' || nostrPassClicked;
-        if (!hasLoggedIn && allowAutoLogin && status.kind === 'ready' && status.auth?.isAuthenticated && !status.auth?.isLocked) {
-          hasLoggedIn = true;
-          console.log('[Login] NostrPass ready+authenticated — installing provider…');
-          try {
-            // Always install NostrPass as window.nostr so the signaling worker uses it
-            embassy.installNostrProvider({ overrideExisting: true });
-            console.log('[Login] Provider installed. window.nostr now:', window.nostr ? 'present' : 'absent');
-
-            let pubkey = status.auth.publicKey;
-            console.log('[Login] pubkey from status.auth:', pubkey ? `${pubkey.slice(0, 8)}…` : 'none — will call getPublicKey');
-            if (!pubkey) {
-              const nostr = window.nostr;
-              if (!nostr) {
-                console.warn('[Login] window.nostr not available after installNostrProvider');
-                return;
-              }
-              pubkey = await nostr.getPublicKey();
-              console.log('[Login] pubkey from getPublicKey:', pubkey ? `${pubkey.slice(0, 8)}…` : 'FAILED');
-            }
-            localStorage.setItem(STORAGE_KEYS.pubkey, pubkey);
-            localStorage.setItem(STORAGE_KEYS.relays, JSON.stringify(relays));
-            localStorage.setItem(STORAGE_KEYS.loginMethod, 'nostrpass');
-            console.log('[Login] Calling onLogin with pubkey:', pubkey.slice(0, 8), '…');
-            props.onLogin(pubkey, relays);
-          } catch (err) {
-            console.error('[Login] Failed to get public key:', err);
-          }
-        }
-      };
-
-      window.addEventListener('nostrpass-lite:status', handleStatus);
-      onCleanup(() => window.removeEventListener('nostrpass-lite:status', handleStatus));
-      console.log('[Login] Status listener attached');
-    } catch (err) {
-      console.error('[Login] Failed to initialize NostrPass:', err);
+  onCleanup(() => {
+    buttonObserver?.disconnect();
+    if (statusHandler) {
+      window.removeEventListener('nostrpass-lite:status', statusHandler);
     }
   });
 
@@ -277,9 +340,34 @@ const Login: Component<LoginProps> = (props) => {
         End-to-end encrypted calls on Nostr
       </p>
 
-      {/* NostrPass button container — flex+center so injected button is centered */}
-      {/* onClick marks explicit user intent so status handler can allow auto-login */}
-      <div ref={containerRef} class="nostrpass-btn-container w-full max-w-xs flex justify-center" onClick={() => { nostrPassClicked = true; }} />
+      <div class="w-full max-w-xs">
+        <Show when={!showNostrPassButton()}>
+          <button
+            class="w-full py-3 rounded-xl font-medium text-sm flex items-center justify-center gap-2"
+            style={{
+              background: '#16a34a',
+              color: '#fff',
+              border: '1px solid #15803d',
+              cursor: nostrPassLoading() ? 'not-allowed' : 'pointer',
+              opacity: nostrPassLoading() ? '0.7' : '1',
+            }}
+            onClick={handleNostrPassClick}
+            disabled={nostrPassLoading()}
+          >
+            {nostrPassLoading() ? 'Loading NostrPass…' : 'Sign in with NostrPass'}
+          </button>
+        </Show>
+        {/* NostrPass button container — flex+center so injected button is centered */}
+        <div
+          ref={containerRef}
+          class="nostrpass-btn-container w-full flex justify-center"
+          style={{ display: showNostrPassButton() ? 'flex' : 'none' }}
+          onClick={() => { nostrPassClicked = true; }}
+        />
+      </div>
+      <Show when={nostrPassError()}>
+        <p class="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{nostrPassError()}</p>
+      </Show>
 
       {/* Extension button — shown prominently when a NIP-07 extension is detected */}
       <Show when={hasExtension()}>

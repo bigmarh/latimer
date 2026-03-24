@@ -6,7 +6,7 @@
  * Message protocol (main ↔ worker):
  *
  * Main → Worker:
- *   { type: 'init', relays, sk? }          sk=hex means KeySigner; absent means proxy NIP07
+ *   { type: 'init', relays, sk?, nwpcState? }  sk=hex means KeySigner; nwpcState=saved Bloom filter
  *   { type: 'send', to, method, params }
  *   { type: 'destroy' }
  *   { type: 'signerResponse', id, result?, error? }
@@ -16,6 +16,7 @@
  *   { type: 'error', message }
  *   { type: 'method', method, params, from, timestamp }
  *   { type: 'signerRequest', id, op, params }
+ *   { type: 'storageSet', key, value }        mirror NWPC state saves to localStorage
  */
 
 import { NWPCPeer } from '@tat-protocol/nwpc';
@@ -25,12 +26,26 @@ import type { StorageInterface } from '@tat-protocol/storage';
 import type { Signer, UnsignedNostrEvent, NostrEvent } from '@tat-protocol/types';
 
 // ---------------------------------------------------------------------------
-// In-memory storage — localStorage not available in workers
+// Storage — localStorage not available in workers, so we use an in-memory
+// store that mirrors writes for the NWPC state key back to the main thread
+// via postMessage so main can persist the Bloom filter to localStorage.
+// This lets us restore the Bloom filter on the next session so already-seen
+// events are skipped before decryption is even attempted.
 // ---------------------------------------------------------------------------
-class MemoryStore implements StorageInterface {
+class PersistingMemoryStore implements StorageInterface {
   private store = new Map<string, string>();
+
+  /** Pre-populate with a value saved from a previous session */
+  preload(key: string, value: string) { this.store.set(key, value); }
+
   async getItem(key: string) { return this.store.get(key) ?? null; }
-  async setItem(key: string, value: string) { this.store.set(key, value); }
+
+  async setItem(key: string, value: string) {
+    this.store.set(key, value);
+    // Notify the main thread so it can persist to localStorage
+    self.postMessage({ type: 'storageSet', key, value });
+  }
+
   async removeItem(key: string) { this.store.delete(key); }
   async clear() { this.store.clear(); }
 }
@@ -84,6 +99,7 @@ class ProxySigner implements Signer {
 // ---------------------------------------------------------------------------
 let peer: NWPCPeer | null = null;
 let proxySigner: ProxySigner | null = null;
+let storage: PersistingMemoryStore | null = null;
 
 const METHODS = [
   'latimer.call_offer',
@@ -121,6 +137,7 @@ self.onmessage = async (e: MessageEvent) => {
     case 'init': {
       const relays = msg.relays as string[];
       const sk = msg.sk as string | undefined;
+      const savedNwpcState = msg.nwpcState as string | undefined;
 
       let signer: Signer;
       if (sk) {
@@ -131,7 +148,12 @@ self.onmessage = async (e: MessageEvent) => {
         signer = proxySigner;
       }
 
-      const storage = new MemoryStore();
+      storage = new PersistingMemoryStore();
+      // Restore Bloom filter from previous session so already-seen events
+      // are skipped before decryption is attempted, preventing the decrypt flood.
+      if (savedNwpcState) {
+        storage.preload('nwpc-bbb-love', savedNwpcState);
+      }
       peer = new NWPCPeer({ signer, storage, relays });
       attachHandlers(peer);
 
@@ -184,6 +206,7 @@ self.onmessage = async (e: MessageEvent) => {
       void peer?.disconnect();
       peer = null;
       proxySigner = null;
+      storage = null;
       break;
     }
   }

@@ -1,151 +1,208 @@
-import { SimplePool } from 'nostr-tools';
-import { nip19 } from 'nostr-tools';
+import { SimplePool, nip19, type Event } from 'nostr-tools';
 import type { Contact } from '../types';
+import { DEFAULT_RELAYS } from '../constants';
 
 const pool = new SimplePool();
+const relayResolutionCache = new Map<string, Promise<string[]>>();
 
-export async function loadContacts(pubkey: string, relays: string[]): Promise<Contact[]> {
+const DISCOVERY_RELAYS = [
+  ...DEFAULT_RELAYS,
+  'wss://relay.primal.net',
+  'wss://relay.nostr.band',
+  'wss://purplepag.es',
+];
+
+function normalizeRelay(relay: string): string | null {
+  const trimmed = relay.trim();
+  if (!trimmed.startsWith('wss://') && !trimmed.startsWith('ws://')) return null;
+  return trimmed.replace(/\/+$/, '');
+}
+
+function mergeRelays(...groups: Array<string[] | undefined>): string[] {
+  const merged: string[] = [];
+  const seen = new Set<string>();
+
+  for (const group of groups) {
+    for (const relay of group ?? []) {
+      const normalized = normalizeRelay(relay);
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      merged.push(normalized);
+    }
+  }
+
+  return merged;
+}
+
+function parseProfileEvent(event: Event): Contact {
+  try {
+    const parsed = JSON.parse(event.content) as {
+      name?: string;
+      display_name?: string;
+      picture?: string;
+      about?: string;
+      nip05?: string;
+    };
+
+    return {
+      pubkey: event.pubkey,
+      name: parsed.name,
+      displayName: parsed.display_name,
+      picture: parsed.picture,
+      about: parsed.about,
+      nip05: parsed.nip05,
+    };
+  } catch {
+    return { pubkey: event.pubkey };
+  }
+}
+
+async function loadLatestEvent(
+  relays: string[],
+  filter: { kinds: number[]; authors: string[]; limit?: number },
+  timeoutMs: number,
+): Promise<Event | null> {
   return new Promise((resolve) => {
-    const contacts: Contact[] = [];
+    let settled = false;
+    let latest: Event | null = null;
+    let sub: { close: (reason?: string) => void | Promise<void> } | null = null;
 
-    // First, fetch the follow list (kind 3)
-    const followSub = pool.subscribeMany(
-      relays,
-      { kinds: [3], authors: [pubkey], limit: 1 },
-      {
-        onevent(event) {
-          const followedPubkeys = event.tags
-            .filter((t) => t[0] === 'p' && t[1])
-            .map((t) => t[1] as string);
+    const finalize = () => {
+      if (settled) return;
+      settled = true;
+      if (sub) void sub.close('done');
+      resolve(latest);
+    };
 
-          if (followedPubkeys.length === 0) {
-            resolve([]);
-            followSub.close();
-            return;
-          }
+    sub = pool.subscribeMany(relays, filter, {
+      onevent(event) {
+        if (!latest || event.created_at > latest.created_at) {
+          latest = event;
+        }
+      },
+      oneose() {
+        finalize();
+      },
+      onclose() {
+        finalize();
+      },
+    });
 
-          // Batch fetch profiles in chunks of 100
-          const batchSize = 100;
-          const batches: string[][] = [];
-          for (let i = 0; i < followedPubkeys.length; i += batchSize) {
-            batches.push(followedPubkeys.slice(i, i + batchSize));
-          }
+    setTimeout(finalize, timeoutMs);
+  });
+}
 
-          let remaining = batches.length;
-          if (remaining === 0) {
-            resolve([]);
-            followSub.close();
-            return;
-          }
+async function resolveUserRelays(pubkey: string, relays: string[]): Promise<string[]> {
+  const seedRelays = mergeRelays(relays, DISCOVERY_RELAYS);
+  const cacheKey = `${pubkey}:${seedRelays.join(',')}`;
+  const cached = relayResolutionCache.get(cacheKey);
+  if (cached) return cached;
 
-          const profileMap = new Map<string, Contact>();
-
-          for (const batch of batches) {
-            const profileSub = pool.subscribeMany(
-              relays,
-              { kinds: [0], authors: batch },
-              {
-                onevent(profileEvent) {
-                  try {
-                    const parsed = JSON.parse(profileEvent.content) as {
-                      name?: string;
-                      display_name?: string;
-                      picture?: string;
-                      about?: string;
-                      nip05?: string;
-                    };
-                    profileMap.set(profileEvent.pubkey, {
-                      pubkey: profileEvent.pubkey,
-                      name: parsed.name,
-                      displayName: parsed.display_name,
-                      picture: parsed.picture,
-                      about: parsed.about,
-                      nip05: parsed.nip05,
-                    });
-                  } catch {
-                    // ignore parse errors
-                  }
-                },
-                oneose() {
-                  profileSub.close();
-                  // Add this batch's results immediately so the 10s timeout
-                  // returns partial results instead of an empty array
-                  for (const pk of batch) {
-                    if (!contacts.some((c) => c.pubkey === pk)) {
-                      contacts.push(profileMap.get(pk) ?? { pubkey: pk });
-                    }
-                  }
-                  remaining--;
-                  if (remaining === 0) {
-                    // All batches done — resolve in follow order
-                    const ordered = followedPubkeys.map(
-                      (pk) => contacts.find((c) => c.pubkey === pk) ?? { pubkey: pk }
-                    );
-                    resolve(ordered);
-                    followSub.close();
-                  }
-                },
-              }
-            );
-          }
-        },
-        oneose() {
-          // If no kind 3 event found
-          followSub.close();
-          resolve([]);
-        },
-      }
+  const resolution = (async () => {
+    const relayListEvent = await loadLatestEvent(
+      seedRelays,
+      { kinds: [10002], authors: [pubkey], limit: 1 },
+      4_000,
     );
 
-    // Timeout after 10 seconds
-    setTimeout(() => {
-      followSub.close();
-      resolve(contacts);
-    }, 10_000);
+    if (!relayListEvent) {
+      return seedRelays;
+    }
+
+    const publishedRelays = relayListEvent.tags
+      .filter((tag) => tag[0] === 'r' && typeof tag[1] === 'string')
+      .map((tag) => tag[1] as string);
+
+    return mergeRelays(seedRelays, publishedRelays);
+  })();
+
+  relayResolutionCache.set(cacheKey, resolution);
+  return resolution;
+}
+
+export async function loadContacts(pubkey: string, relays: string[]): Promise<Contact[]> {
+  const queryRelays = await resolveUserRelays(pubkey, relays);
+  const followEvent = await loadLatestEvent(
+    queryRelays,
+    { kinds: [3], authors: [pubkey], limit: 1 },
+    6_000,
+  );
+
+  if (!followEvent) {
+    return [];
+  }
+
+  const followedPubkeys = Array.from(
+    new Set(
+      followEvent.tags
+        .filter((tag) => tag[0] === 'p' && tag[1])
+        .map((tag) => tag[1] as string),
+    ),
+  );
+
+  if (followedPubkeys.length === 0) {
+    return [];
+  }
+
+  return new Promise((resolve) => {
+    const profileMap = new Map<string, Contact>();
+    const subs: Array<{ close: (reason?: string) => void | Promise<void> }> = [];
+    const completedBatches = new Set<number>();
+    let settled = false;
+
+    const finalize = () => {
+      if (settled) return;
+      settled = true;
+      subs.forEach((sub) => void sub.close('done'));
+      resolve(
+        followedPubkeys.map((followedPubkey) => profileMap.get(followedPubkey) ?? { pubkey: followedPubkey }),
+      );
+    };
+
+    const markBatchDone = (index: number) => {
+      if (completedBatches.has(index)) return;
+      completedBatches.add(index);
+      if (completedBatches.size === Math.ceil(followedPubkeys.length / 100)) {
+        finalize();
+      }
+    };
+
+    for (let i = 0; i < followedPubkeys.length; i += 100) {
+      const batch = followedPubkeys.slice(i, i + 100);
+      const batchIndex = i / 100;
+
+      const sub = pool.subscribeMany(
+        queryRelays,
+        { kinds: [0], authors: batch },
+        {
+          onevent(profileEvent) {
+            profileMap.set(profileEvent.pubkey, parseProfileEvent(profileEvent));
+          },
+          oneose() {
+            markBatchDone(batchIndex);
+          },
+          onclose() {
+            markBatchDone(batchIndex);
+          },
+        },
+      );
+
+      subs.push(sub);
+    }
+
+    setTimeout(finalize, 8_000);
   });
 }
 
 export async function loadProfile(pubkey: string, relays: string[]): Promise<Contact> {
-  return new Promise((resolve) => {
-    const sub = pool.subscribeMany(
-      relays,
-      { kinds: [0], authors: [pubkey], limit: 1 },
-      {
-        onevent(event) {
-          try {
-            const parsed = JSON.parse(event.content) as {
-              name?: string;
-              display_name?: string;
-              picture?: string;
-              about?: string;
-              nip05?: string;
-            };
-            sub.close();
-            resolve({
-              pubkey,
-              name: parsed.name,
-              displayName: parsed.display_name,
-              picture: parsed.picture,
-              about: parsed.about,
-              nip05: parsed.nip05,
-            });
-          } catch {
-            sub.close();
-            resolve({ pubkey });
-          }
-        },
-        oneose() {
-          sub.close();
-          resolve({ pubkey });
-        },
-      }
-    );
+  const queryRelays = await resolveUserRelays(pubkey, relays);
+  const event = await loadLatestEvent(
+    queryRelays,
+    { kinds: [0], authors: [pubkey], limit: 1 },
+    5_000,
+  );
 
-    setTimeout(() => {
-      sub.close();
-      resolve({ pubkey });
-    }, 5_000);
-  });
+  return event ? parseProfileEvent(event) : { pubkey };
 }
 
 export function getDisplayName(contact: Contact): string {

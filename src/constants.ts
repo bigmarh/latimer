@@ -26,8 +26,10 @@ export const STORAGE_KEYS = {
   pubkey: 'latimer-pubkey',
   relays: 'latimer-relays',
   contacts: 'latimer-contacts',
+  favoriteContacts: 'latimer-favorite-contacts',
   missedCalls: 'latimer-missed-calls',
   recentCalls: 'latimer-recent-calls',
   loginMethod: 'latimer-login-method',
   hideLinkExplainer: 'latimer-hide-link-explainer',
+  nwpcState: 'nwpc-bbb-love', // NWPCBase's hardcoded state key — persisting the Bloom filter avoids re-decrypting historical messages
 } as const;

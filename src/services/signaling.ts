@@ -4,6 +4,7 @@ import { WrapWithSigner } from '@tat-protocol/utils';
 import NDK from '@nostr-dev-kit/ndk';
 import { SimplePool } from 'nostr-tools';
 import type { LatimerMethod } from '../types';
+import { STORAGE_KEYS } from '../constants';
 
 type MethodHandler = (params: Record<string, unknown>, fromPubkey: string, timestamp: number) => void;
 
@@ -49,6 +50,9 @@ class LatimerSignaling {
 
     const initMsg: Record<string, unknown> = { type: 'init', relays };
     if (skHex) initMsg.sk = skHex; // KeySigner runs fully in worker; no proxy needed
+    // Restore the NWPC Bloom filter so already-seen events skip decryption this session
+    const savedNwpcState = localStorage.getItem(STORAGE_KEYS.nwpcState);
+    if (savedNwpcState) initMsg.nwpcState = savedNwpcState;
 
     // Wire up message handling before posting init so we don't miss 'ready'
     return new Promise<string>((resolve, reject) => {
@@ -82,6 +86,11 @@ class LatimerSignaling {
       }
       case 'signerRequest':
         void this._proxySignerRequest(msg.id as string, msg.op as string, msg.params as Record<string, unknown>);
+        break;
+      case 'storageSet':
+        // Worker is persisting NWPC state (Bloom filter) — save to localStorage so
+        // the next session can restore it and skip re-decrypting historical messages.
+        try { localStorage.setItem(msg.key as string, msg.value as string); } catch { /* ignore quota */ }
         break;
       case 'sendAwaitDone':
         this.awaitCbs.get(msg.reqId as string)?.resolve();

@@ -2,12 +2,14 @@ import type { Component } from 'solid-js';
 import { createSignal } from 'solid-js';
 import type { Contact } from '../types';
 import { getDisplayName, getAvatarInitials } from '../services/nostr';
-import { LinkIcon, VideoIcon, PhoneIcon } from './icons';
+import { LinkIcon, VideoIcon, PhoneIcon, StarIcon } from './icons';
 
 interface ContactCardProps {
   contact: Contact;
+  starred: boolean;
   onSendLink: (contact: Contact) => Promise<boolean>;
   onCall: (contact: Contact, type: 'audio' | 'video') => void;
+  onToggleStar: (contact: Contact) => void;
 }
 
 /**
@@ -36,7 +38,7 @@ function truncateName(name: string, max = 12): string {
 
 const ContactCard: Component<ContactCardProps> = (props) => {
   const [linkState, setLinkState] = createSignal<'idle' | 'sending' | 'sent' | 'error'>('idle');
-  const displayName = () => truncateName(getDisplayName(props.contact));
+  const displayName = () => truncateName(getDisplayName(props.contact), 24);
   const initials = () => getAvatarInitials(props.contact);
   const gradient = () => getPubkeyGradient(props.contact.pubkey);
 
@@ -63,115 +65,168 @@ const ContactCard: Component<ContactCardProps> = (props) => {
     switch (linkState()) {
       case 'sending':
         return {
-          background: 'rgba(124, 58, 237, 0.14)',
+          background: 'rgba(124, 58, 237, 0.16)',
           color: 'var(--color-accent)',
-          border: '1px solid rgba(124, 58, 237, 0.35)',
+          border: '1px solid rgba(124, 58, 237, 0.32)',
         };
       case 'sent':
         return {
-          background: 'rgba(34, 197, 94, 0.14)',
+          background: 'rgba(34, 197, 94, 0.16)',
           color: '#22c55e',
-          border: '1px solid rgba(34, 197, 94, 0.35)',
+          border: '1px solid rgba(34, 197, 94, 0.28)',
         };
       case 'error':
         return {
-          background: 'rgba(239, 68, 68, 0.14)',
+          background: 'rgba(239, 68, 68, 0.16)',
           color: 'var(--color-danger)',
-          border: '1px solid rgba(239, 68, 68, 0.35)',
+          border: '1px solid rgba(239, 68, 68, 0.3)',
         };
       default:
         return {
-          background: 'var(--color-surface-2)',
+          background: 'rgba(255,255,255,0.04)',
           color: 'var(--color-text-dim)',
-          border: '1px solid var(--color-border)',
+          border: '1px solid rgba(255,255,255,0.08)',
         };
     }
   };
 
+  const actionButtonBaseStyle = {
+    height: '38px',
+    'border-radius': '999px',
+    display: 'inline-flex',
+    'align-items': 'center',
+    'justify-content': 'center',
+    gap: '0.45rem',
+    padding: '0 0.9rem',
+    'font-size': '0.75rem',
+    'font-weight': '600',
+    'letter-spacing': '0.01em',
+    transition: 'transform 0.12s ease, background 0.12s ease, border-color 0.12s ease',
+  } as const;
+
   return (
     <div
-      class="card flex flex-col items-center p-3 gap-2 cursor-pointer"
-      style={{ transition: 'transform 0.12s, box-shadow 0.12s' }}
+      class="card flex overflow-hidden"
+      style={{
+        transition: 'transform 0.12s, box-shadow 0.12s',
+        position: 'relative',
+        'min-height': '104px',
+        background: 'linear-gradient(180deg, rgba(23,24,35,0.98) 0%, rgba(16,18,28,0.98) 100%)',
+        'box-shadow': '0 10px 32px rgba(0,0,0,0.2)',
+      }}
     >
-      {/* Avatar */}
+      <button
+        class="flex items-center justify-center w-8 h-8 rounded-full"
+        style={{
+          position: 'absolute',
+          top: '12px',
+          right: '12px',
+          'z-index': '1',
+          background: props.starred ? 'rgba(250, 204, 21, 0.16)' : 'rgba(255,255,255,0.04)',
+          color: props.starred ? '#facc15' : 'rgba(255,255,255,0.45)',
+          border: props.starred ? '1px solid rgba(250, 204, 21, 0.3)' : '1px solid rgba(255,255,255,0.06)',
+          cursor: 'pointer',
+        }}
+        onClick={() => props.onToggleStar(props.contact)}
+        aria-label={props.starred ? `Remove ${displayName()} from favorites` : `Add ${displayName()} to favorites`}
+        title={props.starred ? 'Favorited' : 'Add to favorites'}
+      >
+        <StarIcon size={15} style={{ fill: props.starred ? 'currentColor' : 'transparent' }} />
+      </button>
+
       <div
-        class="avatar w-16 h-16 text-xl"
-        style={{ background: props.contact.picture ? 'transparent' : gradient() }}
+        class="flex items-center justify-center w-[96px] min-h-full flex-shrink-0"
+        style={{
+          background: props.contact.picture ? '#10121a' : gradient(),
+          'border-right': '1px solid rgba(255,255,255,0.06)',
+        }}
       >
         {props.contact.picture ? (
           <img
             src={props.contact.picture}
             alt={displayName()}
-            class="w-full h-full object-cover rounded-full"
+            class="w-full h-full object-cover"
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = 'none';
             }}
           />
         ) : (
-          <span>{initials()}</span>
+          <div
+            class="avatar w-14 h-14 text-xl"
+            style={{
+              background: 'rgba(8,10,15,0.18)',
+              'box-shadow': '0 10px 30px rgba(0,0,0,0.16)',
+            }}
+          >
+            <span>{initials()}</span>
+          </div>
         )}
       </div>
 
-      {/* Name */}
-      <span
-        class="text-xs font-medium text-center leading-tight"
-        style={{ color: 'var(--color-text)' }}
-      >
-        {displayName()}
-      </span>
-
-      {/* Call buttons */}
-      <div class="flex items-center justify-between w-full mt-2 px-1">
-        {/* Send callback link */}
-        <button
-          class="flex items-center justify-center w-10 h-10 rounded-full transition-all"
-          style={{
-            ...linkButtonStyle(),
-            cursor: linkState() === 'sending' ? 'not-allowed' : 'pointer',
-          }}
-          onClick={() => { void handleSendLink(); }}
-          aria-label={`Send callback link to ${displayName()}`}
-          title={
-            linkState() === 'sent'
-              ? 'Link sent'
-              : linkState() === 'error'
-                ? 'Sending failed'
-                : 'Send callback link'
-          }
-          disabled={linkState() === 'sending'}
+      <div class="flex-1 min-w-0 flex flex-col justify-center px-4 py-4">
+        <span
+          class="pr-10 text-sm font-semibold leading-tight truncate"
+          style={{ color: 'var(--color-text)' }}
         >
-          <LinkIcon size={16} />
-        </button>
+          {displayName()}
+        </span>
 
-        {/* Audio call */}
-        <button
-          class="flex items-center justify-center w-10 h-10 rounded-full transition-all"
-          style={{
-            background: 'var(--color-surface-2)',
-            color: 'var(--color-text-dim)',
-            border: '1px solid var(--color-border)',
-            cursor: 'pointer',
-          }}
-          onClick={() => props.onCall(props.contact, 'audio')}
-          aria-label={`Audio call ${displayName()}`}
-        >
-          <PhoneIcon size={16} />
-        </button>
+        <div class="mt-3 flex items-center gap-2 flex-wrap">
+          <button
+            class="transition-all"
+            style={{
+              ...actionButtonBaseStyle,
+              ...linkButtonStyle(),
+              cursor: linkState() === 'sending' ? 'not-allowed' : 'pointer',
+            }}
+            onClick={() => { void handleSendLink(); }}
+            aria-label={`Send callback link to ${displayName()}`}
+            title={
+              linkState() === 'sent'
+                ? 'Link sent'
+                : linkState() === 'error'
+                  ? 'Sending failed'
+                  : 'Send callback link'
+            }
+            disabled={linkState() === 'sending'}
+          >
+            <LinkIcon size={14} />
+            <span>{linkState() === 'sent' ? 'Sent' : 'Link'}</span>
+          </button>
 
-        {/* Video call */}
-        <button
-          class="flex items-center justify-center w-10 h-10 rounded-full transition-all"
-          style={{
-            background: 'var(--color-accent)',
-            color: '#fff',
-            border: 'none',
-            cursor: 'pointer',
-          }}
-          onClick={() => props.onCall(props.contact, 'video')}
-          aria-label={`Video call ${displayName()}`}
-        >
-          <VideoIcon size={16} />
-        </button>
+          <button
+            class="transition-all"
+            style={{
+              ...actionButtonBaseStyle,
+              background: 'rgba(255,255,255,0.04)',
+              color: 'var(--color-text-dim)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              cursor: 'pointer',
+            }}
+            onClick={() => props.onCall(props.contact, 'audio')}
+            aria-label={`Audio call ${displayName()}`}
+          >
+            <PhoneIcon size={14} />
+            <span>Call</span>
+          </button>
+
+          <button
+            class="transition-all"
+            style={{
+              ...actionButtonBaseStyle,
+              background: 'rgba(124, 58, 237, 0.18)',
+              color: '#fff',
+              border: '1px solid rgba(124, 58, 237, 0.3)',
+              'box-shadow': '0 10px 22px rgba(124, 58, 237, 0.18)',
+              cursor: 'pointer',
+            }}
+            onClick={() => props.onCall(props.contact, 'video')}
+            aria-label={`Video call ${displayName()}`}
+          >
+            <VideoIcon size={14} />
+            <span>Video</span>
+          </button>
+        </div>
       </div>
     </div>
   );
